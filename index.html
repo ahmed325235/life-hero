@@ -3525,6 +3525,7 @@ let state = {
   _commitLastFineHour:-1, _commitTotalFined:0, _commitLastFineDay:'',
   _commitStartHour:8, _commitEndHour:18,
   _commitStreakBrokenDays:0, _commitLastBrokenDay:'',
+  _commitTotalBreaks:0, _commitLastStreakBeforeBreak:0, _commitCurrentStreakStart:'',
   _dayNightMode:'auto', // 'auto' | 'day' | 'night'
   _commitActiveTaskId:null, _commitBreakUntil:0,
   freeHabitsInBreak:false,
@@ -3667,6 +3668,10 @@ function loadState(){
       if(state._commitFinePerHour===undefined)state._commitFinePerHour=10; // legacy compat
       if(state._commitStreakBrokenDays===undefined)state._commitStreakBrokenDays=0;
       if(!state._commitLastBrokenDay)state._commitLastBrokenDay='';
+      // متغيرات نظام الكسر الجديد
+      if(state._commitTotalBreaks===undefined)state._commitTotalBreaks=state._commitStreakBrokenDays||0; // هجرة من النظام القديم
+      if(state._commitLastStreakBeforeBreak===undefined)state._commitLastStreakBeforeBreak=0;
+      if(!state._commitCurrentStreakStart)state._commitCurrentStreakStart='';
       if(!state._dayNightMode)state._dayNightMode='auto';
       if(state._commitActiveTaskId===undefined)state._commitActiveTaskId=null;
       if(state._commitBreakUntil===undefined)state._commitBreakUntil=0;
@@ -4146,25 +4151,55 @@ function _isPomoScreenOpen(){
   return poOv && poOv.style.display !== 'none' && !poOv.classList.contains('hidden');
 }
 
-// حساب قيمة الخصم المتصاعدة
-// اليوم 1 و 2 = 50 | يوم 3 = 60 | يوم 4 = 70 | ...
+// الخصم ثابت دائماً = 10 ذهب/ساعة
 function _getCommitFine(){
-  const broken = state._commitStreakBrokenDays || 0;
-  if(broken <= 1) return 50;
-  return 50 + ((broken - 1) * 10);
+  return 10;
 }
 
-// تسجيل يوم الإهمال / الالتزام (يُستدعى من commitBarTick)
+// تسجيل كسر الاستمرارية (يُستدعى من commitBarTick عند كل فشل فعلي)
 function _updateCommitStreak(wasGood){
-  const today = new Date().toDateString();
-  if(state._commitLastBrokenDay === today) return; // سجّلنا اليوم بالفعل
-  state._commitLastBrokenDay = today;
-  if(wasGood){
-    state._commitStreakBrokenDays = 0; // التزم — نصفّر العداد
-  } else {
-    state._commitStreakBrokenDays = (state._commitStreakBrokenDays||0) + 1;
+  // لا نسجل إلا عند كسر حقيقي — والكسر يعني مرّت ساعة خمول كاملة
+  // wasGood = true → لا نفعل شيء للعداد الكلي
+  // wasGood = false → نزيد العداد الكلي بشكل دائم
+  if(!wasGood){
+    state._commitTotalBreaks = (state._commitTotalBreaks || 0) + 1;
+    // سجّل آخر استمرارية قبل الكسر
+    const currentStreak = _calcCurrentCommitStreak();
+    state._commitLastStreakBeforeBreak = currentStreak;
+    // ابدأ استمرارية جديدة من الصفر
+    state._commitCurrentStreakStart = new Date().toDateString();
+    saveState();
   }
-  saveState();
+}
+
+// حساب الاستمرارية الحالية منذ آخر كسر (أيام نظيفة متتالية)
+function _calcCurrentCommitStreak(){
+  const fineLog = state._commitFineLog || {};
+  let streak = 0;
+  const now = new Date(); now.setHours(0,0,0,0);
+  for(let i = 0; i < 3650; i++){
+    const d = new Date(now); d.setDate(now.getDate() - i);
+    const ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(ds in fineLog){
+      if(fineLog[ds] > 0) break; // يوم فيه خصم = انكسرت الاستمرارية
+      else streak++; // يوم نظيف
+    } else {
+      if(i > 0) break; // يوم غير مسجل في الماضي = انكسر
+    }
+  }
+  return streak;
+}
+
+// حساب أعلى استمرارية على الإطلاق
+function _calcBestCommitStreak(){
+  const fineLog = state._commitFineLog || {};
+  const keys = Object.keys(fineLog).sort();
+  let best = 0, cur = 0;
+  for(const k of keys){
+    if(fineLog[k] === 0){ cur++; if(cur > best) best = cur; }
+    else cur = 0;
+  }
+  return best;
 }
 
 function renderCommitWeeklyStreak(){
@@ -4173,7 +4208,6 @@ function renderCommitWeeklyStreak(){
   if(!wrap) return;
   // احسب آخر 7 أيام
   const today = new Date(); today.setHours(0,0,0,0);
-  let consecutiveClean = 0; // أيام متتالية بدون خصم من اليوم للخلف
   let dots = '';
   const days = [];
   for(let i=6; i>=0; i--){
@@ -4183,19 +4217,11 @@ function renderCommitWeeklyStreak(){
     const isToday = i === 0;
     const fineLog = state._commitFineLog || {};
     const fined = fineLog[ds] > 0;
-    const notFined = ds in fineLog ? !fined : (isToday ? false : null); // null = غير مسجل
+    const notFined = ds in fineLog ? !fined : (isToday ? false : null);
     days.push({ds, isToday, fined, notFined});
   }
-  // احسب الاستمرارية من اليوم للخلف
-  let streak = 0;
-  const reversed = [...days].reverse();
-  for(const day of reversed){
-    if(day.ds in (state._commitFineLog||{})){
-      if(!day.fined){ streak++; } else { break; }
-    } else {
-      if(!day.isToday) break;
-    }
-  }
+  // احسب الاستمرارية الحالية
+  const currentStreak = _calcCurrentCommitStreak();
   const dayNames = ['أح','إث','ثل','أر','خم','جم','سب'];
   dots = days.map(day => {
     const d = new Date(day.ds+'T00:00:00');
@@ -4216,7 +4242,20 @@ function renderCommitWeeklyStreak(){
     </div>`;
   }).join('');
   wrap.innerHTML = dots;
-  if(cntEl) cntEl.textContent = streak > 0 ? `${streak} يوم نظيف 🔥` : 'ابدأ استمراريتك!';
+  if(cntEl) cntEl.textContent = currentStreak > 0 ? `${currentStreak} يوم نظيف 🔥` : 'ابدأ استمراريتك!';
+
+  // تحديث مربعات الإحصائيات
+  const bestStreak = _calcBestCommitStreak();
+  const lastStreak = state._commitLastStreakBeforeBreak || 0;
+  const totalBreaks = state._commitTotalBreaks || 0;
+  const el_best = document.getElementById('commit-stat-best');
+  const el_last = document.getElementById('commit-stat-last');
+  const el_cur  = document.getElementById('commit-stat-cur');
+  const el_fine = document.getElementById('commit-stat-fine');
+  if(el_best) el_best.textContent = bestStreak;
+  if(el_last) el_last.textContent = lastStreak;
+  if(el_cur)  el_cur.textContent  = currentStreak;
+  if(el_fine) el_fine.textContent = _getCommitFine() + ' 🪙';
 }
 
 function renderCommitBar(){
@@ -4780,11 +4819,33 @@ function renderDashboard(c){
       </div>
       <!-- شريط الاستمرارية الأسبوعية -->
       <div id="commit-weekly-streak" style="margin-top:10px;padding:8px 10px;border-radius:14px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);">
+        <!-- مربعات إحصائيات الاستمرارية -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+          <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:10px;padding:8px 6px;text-align:center;">
+            <div id="commit-stat-best" style="font-size:18px;font-weight:900;color:#10b981;line-height:1;">0</div>
+            <div style="font-size:7px;font-weight:900;color:#10b981;opacity:0.75;margin-top:3px;">🏆 أعلى استمرارية</div>
+          </div>
+          <div style="background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:10px;padding:8px 6px;text-align:center;">
+            <div id="commit-stat-cur" style="font-size:18px;font-weight:900;color:#818cf8;line-height:1;">0</div>
+            <div style="font-size:7px;font-weight:900;color:#818cf8;opacity:0.75;margin-top:3px;">🔥 الاستمرارية الحالية</div>
+          </div>
+          <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.18);border-radius:10px;padding:8px 6px;text-align:center;">
+            <div id="commit-stat-last" style="font-size:18px;font-weight:900;color:#f87171;line-height:1;">0</div>
+            <div style="font-size:7px;font-weight:900;color:#f87171;opacity:0.75;margin-top:3px;">💔 آخر استمرارية</div>
+          </div>
+        </div>
+        <!-- صف الخصم الحالي -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
           <span style="font-size:9px;font-weight:900;color:#6366f1;">🔗 استمراريتك هذا الأسبوع</span>
           <span id="commit-streak-count" style="font-size:9px;font-weight:900;color:#a5b4fc;"></span>
         </div>
         <div id="commit-weekly-dots" style="display:flex;gap:5px;align-items:center;justify-content:center;"></div>
+        <!-- صف معدل الخصم الحالي -->
+        <div style="display:flex;align-items:center;justify-content:center;margin-top:7px;gap:6px;">
+          <span style="font-size:8px;font-weight:700;color:#64748b;">معدل الخصم الحالي:</span>
+          <span id="commit-stat-fine" style="font-size:10px;font-weight:900;color:#f87171;">10 🪙</span>
+          <span style="font-size:8px;font-weight:700;color:#64748b;">/ ساعة</span>
+        </div>
       </div>
     </div>
 
@@ -12093,6 +12154,7 @@ function commitBarTick(){
     state._commitLastTaskDoneTime=0;
     state._commitLastFineInterval=0;
     state._commitIdleStartMs=0;
+    state._commitLastSafeMs=0; // إعادة تصفير آخر لحظة آمنة في اليوم الجديد
     saveState();
   }
 
@@ -12111,6 +12173,7 @@ function commitBarTick(){
   // ── IN BREAK: لا خصم — الوحش ينتظر بهدوء
   if(inBreak){
     state._commitIdleStartMs = 0; // إعادة تصفير وقت الخمول عند البريك
+    state._commitLastSafeMs  = nowMs; // البريك = وقت آمن، لو انتهى البريك يحسب منه
     state._commitLastFineInterval = 0;
     renderCommitBar();
     checkAndQueueDailyDecision(); // فحص نافذة القرار اليومي في البريك
@@ -12118,29 +12181,45 @@ function commitBarTick(){
   }
 
   // ── الشرط الأساسي: هل المؤقت شغّال؟
-  // (الشاشة مش شرط — المتصفح بيوقف المؤقت لما الشاشة مقفولة)
   const pomoActive = _pomo && _pomo.running;
   const isSafe     = pomoActive;
 
   if(isSafe){
-    state._commitIdleStartMs = nowMs; // لو شغال، حدّث وقت البداية
-    state._commitLastFineInterval = 0;
+    // المؤقت شغّال = آمن
+    // نحسب الدقائق الخاملة من آخر tick لحد دلوقتي ونتجاهلها (مش نضيفها)
+    state._commitLastSafeMs  = nowMs;
+    state._commitIdleStartMs = nowMs; // إعادة ضبط — الخمول بيبدأ من لحظة التوقف
     state._monsterPostBreakRegenKey = null;
-    _updateCommitStreak(true); // التزم اليوم
-    // سجّل اليوم كنظيف (لو لم يُخصم منه شيء)
+    _updateCommitStreak(true);
     if(!state._commitFineLog) state._commitFineLog = {};
     const _safeDs = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
     if(!(_safeDs in state._commitFineLog)) state._commitFineLog[_safeDs] = 0;
     renderCommitBar(); renderMonster(); return;
   }
 
-  // ── مش آمن: خصم كل ساعة
-  if(!state._commitIdleStartMs) state._commitIdleStartMs = nowMs;
-  const idleMs   = nowMs - (state._commitIdleStartMs||nowMs);
-  const idleMins = Math.floor(idleMs/60000);
+  // ── مش آمن: نتابع تراكم دقائق الخمول
+  // لو مفيش نقطة بداية خمول → حددها
+  if(!state._commitIdleStartMs || state._commitIdleStartMs === 0){
+    if(state._commitLastSafeMs && state._commitLastSafeMs > 0){
+      // ابدأ من آخر لحظة آمنة (حتى لو التطبيق كان مغلق)
+      state._commitIdleStartMs = state._commitLastSafeMs;
+    } else {
+      // أول مرة في اليوم: ابدأ من بداية الشفت
+      const shiftStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), START, 0, 0).getTime();
+      state._commitIdleStartMs = Math.min(shiftStartMs, nowMs);
+    }
+  }
 
-  // Monster regen كل دقيقة من الغياب
-  if(idleMins > 0){
+  // إجمالي دقائق الخمول المتراكمة منذ بداية الخمول
+  const rawIdleMs   = nowMs - state._commitIdleStartMs;
+  const totalIdleMins = Math.max(0, Math.floor(rawIdleMs / 60000));
+
+  // كم مرة وجب الخصم حتى الآن (كل 60 دقيقة خمول = خصم واحد)
+  const intervalsElapsed = Math.floor(totalIdleMins / 60);
+  const lastFineInterval = state._commitLastFineInterval || 0;
+
+  // Monster regen كل دقيقة خمول
+  if(totalIdleMins > 0){
     const regenKey = Math.floor(nowMs/60000);
     if(state._monsterPostBreakRegenKey !== regenKey){
       state._monsterPostBreakRegenKey = regenKey;
@@ -12152,27 +12231,30 @@ function commitBarTick(){
     }
   }
 
-  // الخصم كل ساعة
-  const fineIntervalMins = 60;
-  const intervalsElapsed  = Math.floor(idleMins / fineIntervalMins);
-  const lastFineInterval  = state._commitLastFineInterval||0;
-
   if(intervalsElapsed > lastFineInterval){
+    // عدد الخصومات الجديدة (لو فتح التطبيق بعد كذا ساعة يخصم كلها دفعة واحدة)
+    const newIntervals = intervalsElapsed - lastFineInterval;
     state._commitLastFineInterval = intervalsElapsed;
-    _updateCommitStreak(false); // لم يلتزم — نزيد العداد
-    const currentFine = _getCommitFine(); // نعيد حساب الخصم بعد تحديث العداد
-    state.coins = Math.max(0, (state.coins||0) - currentFine);
-    state._commitTotalFined = (state._commitTotalFined||0) + currentFine;
-    // سجّل الخصم في سجل اليومي
+
+    // كل ساعة خمول = كسر استمرارية مستقل يرفع الخصم للأبد
+    let totalFineThisBatch = 0;
+    for(let i = 0; i < newIntervals; i++){
+      _updateCommitStreak(false); // كل ساعة = كسر يزيد العداد الكلي
+      totalFineThisBatch += _getCommitFine(); // الخصم يزيد مع كل كسر في هذه الدفعة
+    }
+
+    state.coins = Math.max(0, (state.coins||0) - totalFineThisBatch);
+    state._commitTotalFined = (state._commitTotalFined||0) + totalFineThisBatch;
     if(!state._commitFineLog) state._commitFineLog = {};
     const _todayDs = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
-    state._commitFineLog[_todayDs] = (state._commitFineLog[_todayDs]||0) + currentFine;
-    const broken = state._commitStreakBrokenDays||0;
-    const reason = broken > 1 ? `يوم ${broken} متتالي بلا التزام` : 'المؤقت متوقف';
-    state.history.unshift({id:Date.now(), name:`⚠️ غرامة الالتزام — ${reason}`, date:now.toLocaleString('ar-EG'), coins:-currentFine});
+    state._commitFineLog[_todayDs] = (state._commitFineLog[_todayDs]||0) + totalFineThisBatch;
+    const totalBreaks = state._commitTotalBreaks || 0;
+    const hoursLabel = newIntervals > 1 ? `${newIntervals} ساعات خمول` : 'ساعة خمول';
+    const reason = `${hoursLabel} — إجمالي الكسرات: ${totalBreaks}`;
+    state.history.unshift({id:Date.now(), name:`⚠️ غرامة الالتزام — ${reason}`, date:now.toLocaleString('ar-EG'), coins:-totalFineThisBatch});
     saveState(); updateUI();
-    showToast(`⏱️ خُصم ${currentFine} 🪙 — ${reason}`);
-    flashIsland(`-${currentFine} 🪙`, '#ef4444');
+    showToast(`⏱️ خُصم ${totalFineThisBatch} 🪙 — الكسر #${totalBreaks} — الخصم الجديد: ${_getCommitFine()} 🪙/ساعة`);
+    flashIsland(`-${totalFineThisBatch} 🪙`, '#ef4444');
     monsterRegen(5);
   }
 
