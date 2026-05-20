@@ -193,9 +193,8 @@ window._setupFCM = async function(uid) {
     // جيب FCM Token
     const fcmToken = await getToken(messaging, {
       serviceWorkerRegistration: swReg,
-      // VAPID Key من Firebase Console → Project Settings → Cloud Messaging
-      // غيّر هذا بعد ما تفعّل Cloud Messaging في Firebase Console
-      vapidKey: 'BEl8aSCDjSmYFd8Vz9MCZX4fhxHtK5KcSN3pXtKlHsXmWyHwE_Hy8n2Y3LK4x9P5Q6R7S8T9U0V1W2X3Y4Z5',
+      // ⚠️ استبدل هذا بمفتاح VAPID الحقيقي من Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
+      vapidKey: 'YOUR_REAL_VAPID_KEY_FROM_FIREBASE_CONSOLE',
     }).catch(e => {
       console.warn('[Life Hero] FCM Token failed:', e.message);
       return null;
@@ -272,16 +271,24 @@ onAuthStateChanged(fbAuth, async (user) => {
     document.getElementById('auth-overlay')?.classList.add('hidden');
     if (typeof updateAccountUI === 'function') updateAccountUI(authData);
 
-    // حمّل البيانات من السيرفر
+    // حمّل البيانات من السيرفر — فقط لو أحدث من المحلية
     const cloudState = await window._cloudLoad(user.uid);
     if (cloudState && typeof state !== 'undefined') {
-      Object.assign(state, cloudState);
-      localStorage.setItem('lhRPG_lastSave', String(Date.now()));
-      if (typeof checkDayReset    === 'function') checkDayReset();
-      if (typeof updateUI         === 'function') updateUI();
-      if (typeof applyTheme       === 'function') applyTheme();
-      if (typeof applyDayNightMode === 'function') applyDayNightMode();
-      else if (typeof renderTab   === 'function') renderTab();
+      const cloudTime  = cloudState.updatedAt || 0;
+      const localTime  = parseInt(localStorage.getItem('lhRPG_lastSave') || '0');
+      if (cloudTime >= localTime) {
+        // السيرفر أحدث أو مساوٍ → نطبّق
+        Object.assign(state, cloudState);
+        localStorage.setItem('lhRPG_lastSave', String(Date.now()));
+        if (typeof checkDayReset    === 'function') checkDayReset();
+        if (typeof updateUI         === 'function') updateUI();
+        if (typeof applyTheme       === 'function') applyTheme();
+        if (typeof applyDayNightMode === 'function') applyDayNightMode();
+        else if (typeof renderTab   === 'function') renderTab();
+      } else {
+        // البيانات المحلية أحدث → نحافظ عليها ونرفع للسيرفر
+        if (typeof window._cloudSave === 'function') window._cloudSave(user.uid, state);
+      }
     }
 
     if (typeof showToast === 'function')
@@ -335,7 +342,7 @@ messaging.onBackgroundMessage(function(payload) {
 `;
   const blob = new Blob([swContent], { type: 'application/javascript' });
   const swURL = URL.createObjectURL(blob);
-  navigator.serviceWorker.register(swURL, { scope: '/' })
+  navigator.serviceWorker.register(swURL)
     .then(reg => {
       console.log('[Life Hero] ✅ FCM Service Worker registered');
       window._fcmSwReg = reg;
@@ -500,7 +507,7 @@ self.addEventListener('message', e => {
   }
 
   body.day-mode {
-    --dm-bg:       #f0f4f8;
+    --dm-bg:       #e8eef5;
     --dm-surface:  rgba(255,255,255,0.85);
     --dm-surface2: rgba(241,245,249,0.9);
     --dm-border:   rgba(0,0,0,0.08);
@@ -514,12 +521,6 @@ self.addEventListener('message', e => {
     --dm-glass:    rgba(255,255,255,0.6);
     --dm-input:    rgba(0,0,0,0.04);
     --dm-badge:    rgba(0,0,0,0.05);
-    background-color: #f0f4f8 !important;
-    color: #0f172a !important;
-  }
-
-  body.day-mode {
-    --dm-bg:       #e8eef5;
     background-color: #e8eef5 !important;
     color: #0f172a !important;
   }
@@ -805,6 +806,10 @@ self.addEventListener('message', e => {
     border-color: rgba(255,255,255,0.8) !important;
   }
   @keyframes pulse-soft { 0%,100%{opacity:1} 50%{opacity:0.7} }
+  @keyframes intentionPulse {
+    0%,100%{ box-shadow:0 0 0 0 rgba(250,204,21,0); border-color:rgba(250,204,21,0.4); }
+    50%{ box-shadow:0 0 14px 4px rgba(250,204,21,0.18); border-color:rgba(250,204,21,0.7); }
+  }
   @keyframes slideUp { from{transform:translateY(60px);opacity:0} to{transform:translateY(0);opacity:1} }
   .slide-up { animation: slideUp 0.35s cubic-bezier(0.34,1.3,0.64,1) both; }
   @keyframes popIn { from{transform:scale(0.6);opacity:0} to{transform:scale(1);opacity:1} }
@@ -2327,7 +2332,7 @@ body[data-icon-size="list"] #habits-positive-icons .free-habit-icon-btn > div:la
     </div>
   </div>
   <!-- PWA Install Button -->
-  <button id="pwa-install-btn" onclick="pwaTriggerInstall()" title="تثبيت كتطبيق" style="display:none;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,rgba(37,99,235,0.25),rgba(99,102,241,0.25));border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;display:none;align-items:center;justify-content:center;cursor:pointer;transition:all .2s">
+  <button id="pwa-install-btn" onclick="pwaTriggerInstall()" title="تثبيت كتطبيق" style="display:none;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,rgba(37,99,235,0.25),rgba(99,102,241,0.25));border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;align-items:center;justify-content:center;cursor:pointer;transition:all .2s">
     <i data-lucide="download" style="width:16px;height:16px"></i>
   </button>
   <!-- View Customize Button -->
@@ -3683,7 +3688,7 @@ let state = {
   _commitActiveTaskId:null, _commitBreakUntil:0,
   freeHabitsInBreak:false,
   _outsidePenaltyDays:0, _outsideLastPenaltyDay:'', _outsidePenaltyActive:false,
-  habits:[], paidHabits:[], tasks:[], skills:[], history:[], tbFolders:[],
+  habits:[], paidHabits:[], tasks:[], skills:[], history:[], tbFolders:[], calEvents:[],
   shopItems:{
     rest:[
       {id:1,name:'جلسة استرخاء',desc:'تعيد +20 طاقة',price:30,energyBonus:20,icon:'coffee'},
@@ -3774,7 +3779,7 @@ async function idbDel(key){
 // ================================================================
 function saveState(){
   // Extract video fields before saving to localStorage
-  const {customBgVideo, _commitIdleStartMs, _monsterPostBreakRegenKey, ...stateNoVideo} = state;
+  const {customBgVideo, _monsterPostBreakRegenKey, ...stateNoVideo} = state;
   const levelsNoVideo = (stateNoVideo.levels||[]).map(l=>{ const {levelBgVideo,...rest}=l; return rest; });
   stateNoVideo.levels = levelsNoVideo;
   try{ localStorage.setItem('lhRPG_pro3', JSON.stringify(stateNoVideo)); }catch(e){
@@ -3838,9 +3843,17 @@ function loadState(){
       if(state._levelOverrideTheme===undefined)state._levelOverrideTheme=null;
       if(!state._widgetPositions)state._widgetPositions={};
       state.levels.forEach(l=>{if(!l.desc)l.desc='';});
-      state._commitIdleStartMs = 0;
-      state._commitLastFineInterval = 0;
+      // لا نُصفِّر عداد الخمول عند كل تحميل — فقط نُهيئ لو غير موجود
+      if(state._commitIdleStartMs === undefined) state._commitIdleStartMs = 0;
+      if(state._commitLastFineInterval === undefined) state._commitLastFineInterval = 0;
       state._monsterPostBreakRegenKey = null;
+      // ── تصفير _fmShownToday لو اليوم تغيّر فقط (وليس عند كل رفريش)
+      const _todayFmKey = new Date().toISOString().slice(0,10);
+      if(state._fmShownDay !== _todayFmKey){
+        state._fmShownToday = {};
+        state._fmShownDay   = _todayFmKey;
+      }
+      if(!state._fmShownToday) state._fmShownToday = {};
     }
   }catch(e){}
 }
@@ -4500,8 +4513,23 @@ function renderCommitBar(){
   if(subtitleEl){ subtitleEl.textContent=subtitle; subtitleEl.className='text-[10px] font-black '+(isSafe?'text-emerald-400':'text-red-400'); }
   if(fineEl) {
     const todayFined = state._commitTotalFined || 0;
-    fineEl.textContent = todayFined > 0 ? `−${todayFined} 🪙 خُصم اليوم` : '✅ لا خصم اليوم';
-    fineEl.style.color = todayFined > 0 ? '#f87171' : '#34d399';
+    // حساب دقائق الخمول الجارية (لم تكتمل ساعة بعد)
+    const nowMs2 = Date.now();
+    const idleStartMs = state._commitIdleStartMs || 0;
+    const rawIdleMins = idleStartMs > 0 ? Math.max(0, Math.floor((nowMs2 - idleStartMs) / 60000)) : 0;
+    const pendingMins = rawIdleMins % 60; // الدقائق المتبقية في الساعة الحالية
+    const pendingHours = Math.floor(rawIdleMins / 60);
+
+    if(todayFined > 0 && pendingMins > 0) {
+      fineEl.textContent = `−${todayFined} 🪙 خُصم + ${pendingMins}د خمول جارٍ`;
+    } else if(todayFined > 0) {
+      fineEl.textContent = `−${todayFined} 🪙 خُصم اليوم`;
+    } else if(pendingMins > 0) {
+      fineEl.textContent = `⏱ ${pendingMins} دقيقة خمول (لم تكتمل ساعة بعد)`;
+    } else {
+      fineEl.textContent = '✅ لا خصم اليوم';
+    }
+    fineEl.style.color = todayFined > 0 ? '#f87171' : pendingMins > 0 ? '#fb923c' : '#34d399';
   }
   if(shiftLbl) shiftLbl.textContent=`${_fmtH(START)} — ${_fmtH(END)}`;
 
@@ -8000,21 +8028,27 @@ function buildHabitFormHTML(isPaid){
           <div class="text-[9px] font-black text-slate-500 mb-1.5">❓ السؤال الذي يظهر للمستخدم</div>
           <input type="text" id="h-core-question" placeholder="مثال: ماذا فعلت في بداية اليوم؟" class="w-full bg-slate-950 border border-white/5 focus:border-purple-500/50 rounded-xl px-3 py-2.5 text-sm font-bold text-white outline-none">
         </div>
-        <div class="text-[9px] font-black text-slate-500 mb-1">🎯 الخيارات الأربعة — حدد كل خيار ومساره</div>
+        <div class="text-[9px] font-black text-slate-500 mb-1">🎯 الخيارات الأربعة — حدد كل خيار ومساره الإسلامي</div>
+        <div class="text-[8px] text-slate-600 font-bold mb-2">💡 اضغط على المسار لتعرف وصفه</div>
         ${[
-          {idx:0, pathDefault:'excellence', label:'الخيار 1 — الأقوى'},
-          {idx:1, pathDefault:'success',    label:'الخيار 2 — جيد'},
-          {idx:2, pathDefault:'failure',    label:'الخيار 3 — ضعيف'},
-          {idx:3, pathDefault:'failure',    label:'الخيار 4 — الأسوأ'},
+          {idx:0, pathDefault:'qudwa',   label:'الخيار 1 — الأقوى'},
+          {idx:1, pathDefault:'wai',     label:'الخيار 2 — جيد'},
+          {idx:2, pathDefault:'mumaris', label:'الخيار 3 — مقبول'},
+          {idx:3, pathDefault:'thaqafi', label:'الخيار 4 — الأضعف'},
         ].map(({idx, pathDefault, label}) => `
-        <div class="bg-slate-900/60 rounded-xl p-3 border border-white/5">
+        <div class="bg-slate-900/60 rounded-xl p-3 border border-white/5 mb-2">
           <div class="text-[9px] font-black text-slate-500 mb-2">${label}</div>
           <input type="text" id="h-core-choice-${idx}" placeholder="نص الخيار..." class="w-full bg-slate-950 border border-white/5 focus:border-purple-500/30 rounded-lg px-2.5 py-2 text-xs font-bold text-white outline-none mb-2">
-          <select id="h-core-path-${idx}" class="w-full bg-slate-950 border border-white/5 rounded-lg px-2.5 py-2 text-xs font-bold outline-none">
-            <option value="excellence" ${pathDefault==='excellence'?'selected':''}>🌟 مسار التفوق</option>
-            <option value="success"    ${pathDefault==='success'?'selected':''}>✅ مسار النجاح</option>
-            <option value="failure"    ${pathDefault==='failure'?'selected':''}>❌ مسار الفشل</option>
+          <select id="h-core-path-${idx}" class="w-full bg-slate-950 border border-white/5 rounded-lg px-2.5 py-2 text-xs font-bold outline-none text-white mb-1" onchange="showPathHint('h-hint-${idx}',this.value)">
+            <option value="qudwa"   ${pathDefault==='qudwa'  ?'selected':''}>👑 المسلم القدوة</option>
+            <option value="abid"    ${pathDefault==='abid'   ?'selected':''}>🤲 العابد المخلص</option>
+            <option value="talib"   ${pathDefault==='talib'  ?'selected':''}>📚 طالب العلم</option>
+            <option value="wai"     ${pathDefault==='wai'    ?'selected':''}>🧭 المسلم الواعي</option>
+            <option value="mumaris" ${pathDefault==='mumaris'?'selected':''}>⚡ المسلم الممارس</option>
+            <option value="bahith"  ${pathDefault==='bahith' ?'selected':''}>🔍 الباحث المستيقظ</option>
+            <option value="thaqafi" ${pathDefault==='thaqafi'?'selected':''}>🌱 المسلم الثقافي</option>
           </select>
+          <div id="h-hint-${idx}" class="text-[8px] text-slate-600 font-bold px-1 min-h-[14px]"></div>
         </div>`).join('')}
       </div>
     </div>
@@ -8234,21 +8268,27 @@ function openModal(type,data){
           <div class="text-[9px] font-black text-slate-500 mb-1.5">❓ السؤال الذي يظهر في النافذة</div>
           <input type="text" id="t-core-question" placeholder="مثال: كيف كان أداؤك في هذه المهمة؟" class="w-full bg-slate-950 border border-white/5 focus:border-purple-500/50 rounded-xl px-3 py-2.5 text-sm font-bold text-white outline-none">
         </div>
-        <div class="text-[9px] font-black text-slate-500 mb-1">🎯 الخيارات الأربعة — حدد كل خيار ومساره</div>
+        <div class="text-[9px] font-black text-slate-500 mb-1">🎯 الخيارات الأربعة — حدد كل خيار ومساره الإسلامي</div>
+        <div class="text-[8px] text-slate-600 font-bold mb-2">💡 اضغط على المسار لتعرف وصفه</div>
         ${[
-          {idx:0, pathDefault:'excellence', label:'الخيار 1 — الأقوى'},
-          {idx:1, pathDefault:'success',    label:'الخيار 2 — جيد'},
-          {idx:2, pathDefault:'failure',    label:'الخيار 3 — ضعيف'},
-          {idx:3, pathDefault:'failure',    label:'الخيار 4 — الأسوأ'},
+          {idx:0, pathDefault:'qudwa',   label:'الخيار 1 — الأقوى'},
+          {idx:1, pathDefault:'wai',     label:'الخيار 2 — جيد'},
+          {idx:2, pathDefault:'mumaris', label:'الخيار 3 — مقبول'},
+          {idx:3, pathDefault:'thaqafi', label:'الخيار 4 — الأضعف'},
         ].map(({idx, pathDefault, label}) => `
-        <div class="bg-slate-900/60 rounded-xl p-3 border border-white/5">
+        <div class="bg-slate-900/60 rounded-xl p-3 border border-white/5 mb-2">
           <div class="text-[9px] font-black text-slate-500 mb-2">${label}</div>
           <input type="text" id="t-core-choice-${idx}" placeholder="نص الخيار..." class="w-full bg-slate-950 border border-white/5 focus:border-purple-500/30 rounded-lg px-2.5 py-2 text-xs font-bold text-white outline-none mb-2">
-          <select id="t-core-path-${idx}" class="w-full bg-slate-950 border border-white/5 rounded-lg px-2.5 py-2 text-xs font-bold outline-none">
-            <option value="excellence" ${pathDefault==='excellence'?'selected':''}>🌟 مسار التفوق</option>
-            <option value="success"    ${pathDefault==='success'?'selected':''}>✅ مسار النجاح</option>
-            <option value="failure"    ${pathDefault==='failure'?'selected':''}>❌ مسار الفشل</option>
+          <select id="t-core-path-${idx}" class="w-full bg-slate-950 border border-white/5 rounded-lg px-2.5 py-2 text-xs font-bold outline-none text-white mb-1" onchange="showPathHint('t-hint-${idx}',this.value)">
+            <option value="qudwa"   ${pathDefault==='qudwa'  ?'selected':''}>👑 المسلم القدوة</option>
+            <option value="abid"    ${pathDefault==='abid'   ?'selected':''}>🤲 العابد المخلص</option>
+            <option value="talib"   ${pathDefault==='talib'  ?'selected':''}>📚 طالب العلم</option>
+            <option value="wai"     ${pathDefault==='wai'    ?'selected':''}>🧭 المسلم الواعي</option>
+            <option value="mumaris" ${pathDefault==='mumaris'?'selected':''}>⚡ المسلم الممارس</option>
+            <option value="bahith"  ${pathDefault==='bahith' ?'selected':''}>🔍 الباحث المستيقظ</option>
+            <option value="thaqafi" ${pathDefault==='thaqafi'?'selected':''}>🌱 المسلم الثقافي</option>
           </select>
+          <div id="t-hint-${idx}" class="text-[8px] text-slate-600 font-bold px-1 min-h-[14px]"></div>
         </div>`).join('')}
       </div>
     </div>
@@ -8282,7 +8322,7 @@ function openModal(type,data){
         (ed.coreChoices||[]).forEach((c,i)=>{
           set(`t-core-choice-${i}`, c.text||'');
           const sel = document.getElementById(`t-core-path-${i}`);
-          if(sel) sel.value = c.path||'failure';
+          if(sel) sel.value = c.path||'thaqafi';
         });
       }
       // تحديث معاينة الإحصائيات بقيم المهمة المعدّلة
@@ -9499,7 +9539,7 @@ function buildHabitObj(){
     coreQuestion: document.getElementById('h-core-question')?.value.trim() || '',
     coreChoices: [0,1,2,3].map(i=>({
       text: (document.getElementById('h-core-choice-'+i)?.value||'').trim(),
-      path: document.getElementById('h-core-path-'+i)?.value || 'failure'
+      path: document.getElementById('h-core-path-'+i)?.value || 'thaqafi'
     }))
   };
 }
@@ -9610,7 +9650,7 @@ function saveTask(){
       t.coreQuestion = document.getElementById('t-core-question')?.value.trim() || 'كيف كان أداؤك في هذه المهمة؟';
       t.coreChoices = [0,1,2,3].map(i=>({
         text: document.getElementById(`t-core-choice-${i}`)?.value.trim()||'',
-        path: document.getElementById(`t-core-path-${i}`)?.value||'failure'
+        path: document.getElementById(`t-core-path-${i}`)?.value||'thaqafi'
       }));
     } else {
       delete t.isCoreTask; delete t.coreQuestion; delete t.coreChoices; delete t.coreTime;
@@ -9643,7 +9683,7 @@ function saveTask(){
     task.coreQuestion = document.getElementById('t-core-question')?.value.trim() || 'كيف كان أداؤك في هذه المهمة؟';
     task.coreChoices = [0,1,2,3].map(i=>({
       text: document.getElementById(`t-core-choice-${i}`)?.value.trim() || '',
-      path: document.getElementById(`t-core-path-${i}`)?.value || (i===0?'excellence':i===1?'success':'failure')
+      path: document.getElementById(`t-core-path-${i}`)?.value || (i===0?'qudwa':i===1?'wai':'thaqafi')
     }));
   }
   state.tasks.unshift(task);
@@ -18783,10 +18823,10 @@ function getCoreHabits(){
       coreTime: t.coreTime || t.calStartTime,
       coreQuestion: t.coreQuestion || 'كيف كان أداؤك في هذه المهمة؟',
       coreChoices: t.coreChoices || [
-        { text:'أنجزت المهمة باحترافية تامة', path:'excellence' },
-        { text:'أنجزت المهمة بشكل جيد',       path:'success'    },
-        { text:'أنجزت جزءاً من المهمة',       path:'failure'    },
-        { text:'لم أنجز المهمة',              path:'failure'    },
+        { text:'أنجزت المهمة باحترافية تامة', path:'qudwa'    },
+        { text:'أنجزت المهمة بشكل جيد',       path:'wai'      },
+        { text:'أنجزت جزءاً من المهمة',       path:'mumaris'  },
+        { text:'لم أنجز المهمة',              path:'thaqafi'  },
       ],
       isCoreHabit: false,
       isCoreTask: true,
@@ -18849,8 +18889,8 @@ function checkCoreHabitsByTime(){
     const parts = h.coreTime.split(':');
     if(parts.length < 2) return;
     const targetMins = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    // نافذة تسامح: من وقت العادة حتى +5 دقائق
-    if(nowMins < targetMins || nowMins > targetMins + 5) return;
+    // نافذة تسامح: من وقت العادة حتى +30 دقيقة (بدلاً من 5)
+    if(nowMins < targetMins || nowMins > targetMins + 30) return;
     if(fmDoneToday(h.id)) return;
     if(fmShownToday(h.id)) return;
     if(!state._fmShownToday) state._fmShownToday = {};
@@ -18869,6 +18909,8 @@ function _startFmScheduler(){
 
 setTimeout(checkFirstCoreHabitOnOpen, 2000);
 setTimeout(_startFmScheduler, 3000);
+// العادات الفائتة: تُعرض بعد 4 ثوانٍ (بعد العادات في وقتها وبعد تحميل الداتا)
+setTimeout(()=>{ if(typeof state!=='undefined' && state.habits) checkMissedHabitsOnWakeup(); }, 4000);
 
 // ── alias للاستخدام من خارج النظام (مثل المهام) ──
 function openFmPopup(habit){ showCoreHabitPopup(habit, false); }
@@ -18876,6 +18918,40 @@ function openFmPopup(habit){ showCoreHabitPopup(habit, false); }
 // ── عرض نافذة القرار ──
 let _fmTimer = null;
 let _fmCurrentHabit = null;
+
+// عرض/إخفاء منتقي المسار المباشر
+function toggleDirectPathPicker(){
+  const el = document.getElementById('fm-direct-picker');
+  if(!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Migration: تحويل المسارات القديمة للجديدة تلقائياً ──
+function migrateLegacyPaths(){
+  const legacyMap = { excellence:'qudwa', success:'wai', failure:'thaqafi' };
+  const allHabits = [...(state.habits||[]), ...(state.paidHabits||[])];
+  allHabits.forEach(h => {
+    if(!h.coreChoices) return;
+    h.coreChoices = h.coreChoices.map(ch => ({
+      ...ch,
+      path: legacyMap[ch.path] || ch.path
+    }));
+  });
+  // كمان في flowMapLog
+  if(state.flowMapLog){
+    Object.keys(state.flowMapLog).forEach(k => {
+      const rec = state.flowMapLog[k];
+      if(rec && legacyMap[rec.path]) rec.path = legacyMap[rec.path];
+    });
+  }
+}
+
+// شغّل الـ migration مرة واحدة
+if(!state._pathsMigrated){
+  migrateLegacyPaths();
+  state._pathsMigrated = true;
+  if(typeof saveState === 'function') saveState();
+}
 
 function showCoreHabitPopup(habit, isFirst){
   _fmCurrentHabit = habit;
@@ -18900,21 +18976,70 @@ function showCoreHabitPopup(habit, isFirst){
 
   const choicesEl = document.getElementById('fm-choices');
   const choices = (habit.coreChoices||[]).filter(c=>c.text);
+  const pathDefs = getFmPaths();
+
+  // إذا ما فيش خيارات محددة — عرض الـ 7 مسارات مباشرة للاختيار
+  if(choices.length === 0){
+    choicesEl.innerHTML = `
+      <div style="font-size:9px;font-weight:900;color:#64748b;margin-bottom:10px;text-align:center;">اختر المستوى الذي يعبّر عن أدائك الآن</div>
+      ${pathDefs.map((p,i) => `
+        <button onclick="selectFlowChoiceDirect('${p.id}')"
+          style="width:100%;text-align:right;padding:11px 14px;border-radius:13px;
+                 background:${p.color}10;border:1.5px solid ${p.color}35;cursor:pointer;
+                 font-family:'Cairo',sans-serif;transition:all 0.15s;margin-bottom:7px;display:block;"
+          onmouseover="this.style.background='${p.color}22';this.style.borderColor='${p.color}66'"
+          onmouseout="this.style.background='${p.color}10';this.style.borderColor='${p.color}35'">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:22px;flex-shrink:0;">${p.icon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;font-weight:900;color:${p.color};">${p.name}</div>
+              <div style="font-size:9px;color:#64748b;font-weight:700;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.desc}</div>
+            </div>
+          </div>
+        </button>`).join('')}`;
+    return;
+  }
+
+  // عرض الخيارات العادية مع badge المسار الواضح
   choicesEl.innerHTML = choices.map((ch, i) => {
-    const pathColors = {excellence:'#f59e0b', success:'#10b981', failure:'#ef4444'};
-    const pathLabels = {excellence:'🌟 تفوق', success:'✅ نجاح', failure:'❌ فشل'};
-    const col = pathColors[ch.path] || '#64748b';
+    const pathDef = pathDefs.find(p => p.id === ch.path);
+    const col   = pathDef ? pathDef.color : '#64748b';
+    const icon  = pathDef ? pathDef.icon  : '❓';
+    const pname = pathDef ? pathDef.shortName : ch.path;
+    const pdesc = pathDef ? pathDef.desc : '';
     return `<button onclick="selectFlowChoice(${i})"
       style="width:100%;text-align:right;padding:13px 16px;border-radius:14px;
-             background:${col}12;border:1.5px solid ${col}44;cursor:pointer;
-             font-family:'Cairo',sans-serif;transition:all 0.15s;margin-bottom:8px;"
-      onmouseover="this.style.background='${col}22'" onmouseout="this.style.background='${col}12'">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <span style="font-size:11px;font-weight:900;color:#f1f5f9;">${ch.text}</span>
-        <span style="font-size:9px;font-weight:900;color:${col};white-space:nowrap;background:${col}22;padding:2px 7px;border-radius:8px;">${pathLabels[ch.path]||ch.path}</span>
+             background:${col}10;border:1.5px solid ${col}35;cursor:pointer;
+             font-family:'Cairo',sans-serif;transition:all 0.15s;margin-bottom:8px;display:block;"
+      onmouseover="this.style.background='${col}22';this.style.borderColor='${col}77'"
+      onmouseout="this.style.background='${col}10';this.style.borderColor='${col}35'">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;flex-shrink:0;">${icon}</span>
+        <div style="flex:1;min-width:0;text-align:right;">
+          <div style="font-size:11px;font-weight:900;color:#f1f5f9;">${ch.text}</div>
+          <div style="font-size:9px;font-weight:900;color:${col};margin-top:2px;">${icon} ${pname}</div>
+        </div>
       </div>
     </button>`;
-  }).join('');
+  }).join('') + `
+  <div style="text-align:center;margin-top:4px;">
+    <button onclick="toggleDirectPathPicker()" style="font-size:9px;font-weight:900;color:#475569;background:none;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:4px 12px;cursor:pointer;font-family:'Cairo',sans-serif;">↕ اختر مسار مباشرة</button>
+  </div>
+  <div id="fm-direct-picker" style="display:none;margin-top:10px;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;">
+    <div style="font-size:9px;font-weight:900;color:#64748b;margin-bottom:8px;text-align:center;">اختر مستواك الإسلامي الفعلي الآن</div>
+    ${pathDefs.map(p=>`
+      <button onclick="selectFlowChoiceDirect('${p.id}')"
+        style="width:100%;text-align:right;padding:9px 12px;border-radius:11px;
+               background:${p.color}0d;border:1px solid ${p.color}30;cursor:pointer;
+               font-family:'Cairo',sans-serif;transition:all 0.12s;margin-bottom:6px;display:flex;align-items:center;gap:8px;"
+        onmouseover="this.style.background='${p.color}20'" onmouseout="this.style.background='${p.color}0d'">
+        <span style="font-size:18px;">${p.icon}</span>
+        <div style="flex:1;">
+          <div style="font-size:10px;font-weight:900;color:${p.color};">${p.name}</div>
+          <div style="font-size:8px;color:#475569;font-weight:700;margin-top:1px;">${p.desc}</div>
+        </div>
+      </button>`).join('')}
+  </div>`;
 
   // عداد تنازلي — 5 دقائق للعادات غير الأولى
   const timerEl = document.getElementById('fm-timer');
@@ -18945,26 +19070,56 @@ function showCoreHabitPopup(habit, isFirst){
   overlay.style.display = 'flex';
 }
 
+// اختيار مسار مباشر (بدون نص خيار محدد مسبقاً)
+function selectFlowChoiceDirect(pathId){
+  if(!_fmCurrentHabit) return;
+  if(_fmTimer){ clearInterval(_fmTimer); _fmTimer = null; }
+  const pathDef = getFmPaths().find(p=>p.id===pathId);
+  const ch = { path: pathId, text: pathDef ? pathDef.name : pathId };
+  const isRedo = _fmRedoMode;
+  if(isRedo){
+    _recordFlowChoiceRedo(_fmCurrentHabit, -1, ch);
+    _fmRedoMode = false;
+  } else {
+    _recordFlowChoice(_fmCurrentHabit, -1, ch, false);
+  }
+  _showFlowResult(ch, isRedo);
+}
+
+function _showFlowResult(ch, isRedo){
+  const pathColors = getFmPathColors();
+  const pathNames  = getFmPathFullNames();
+  const col = pathColors[ch.path]||'#64748b';
+  const pathLabel = pathNames[ch.path] || ch.path;
+  const overlay = document.getElementById('fm-popup-overlay');
+  overlay.querySelector('.fm-inner').innerHTML = `
+    <div style="text-align:center;padding:24px 16px;">
+      <div style="margin-bottom:14px;padding:8px 14px;border-radius:10px;border:1px solid rgba(250,204,21,0.4);background:rgba(250,204,21,0.07);animation:intentionPulse 3s ease-in-out infinite;">
+        <div style="font-size:9px;font-weight:900;color:#fbbf24;">✨ طلب رضوان الله والوصول إليه ✨</div>
+      </div>
+      <div style="font-size:48px;margin-bottom:14px;">${_fmCurrentHabit.icon||'🎯'}</div>
+      <div style="font-size:14px;font-weight:900;color:${col};margin-bottom:8px;">${pathLabel}</div>
+      <div style="font-size:12px;color:#94a3b8;font-weight:700;margin-bottom:8px;">"${ch.text}"</div>
+      ${isRedo ? `<div style="font-size:9px;font-weight:900;color:#f59e0b;background:rgba(245,158,11,0.1);padding:4px 10px;border-radius:8px;margin-bottom:14px;">🔄 تم إعادة التسجيل</div>` : ''}
+      <button onclick="closeFmPopup()" style="padding:13px 36px;border-radius:14px;background:linear-gradient(135deg,${col},${col}aa);border:none;color:#fff;font-size:13px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">متابعة ⚔️</button>
+    </div>`;
+  setTimeout(()=>{ closeFmPopup(); const c=document.getElementById('tab-content'); if(c&&state.activeTab==='flowmap') renderFlowMapTab(c); }, 3200);
+}
+
 function selectFlowChoice(idx){
   if(!_fmCurrentHabit) return;
   const choices = (_fmCurrentHabit.coreChoices||[]).filter(c=>c.text);
   const ch = choices[idx];
   if(!ch) return;
   if(_fmTimer){ clearInterval(_fmTimer); _fmTimer = null; }
-  _recordFlowChoice(_fmCurrentHabit, idx, ch, false);
-  // اعرض النتيجة
-  const pathColors = {excellence:'#f59e0b', success:'#10b981', failure:'#ef4444'};
-  const pathNames  = {excellence:'مسار التفوق 🌟', success:'مسار النجاح ✅', failure:'مسار الفشل ❌'};
-  const col = pathColors[ch.path]||'#64748b';
-  const overlay = document.getElementById('fm-popup-overlay');
-  overlay.querySelector('.fm-inner').innerHTML = `
-    <div style="text-align:center;padding:24px 16px;">
-      <div style="font-size:48px;margin-bottom:14px;">${_fmCurrentHabit.icon||'🎯'}</div>
-      <div style="font-size:14px;font-weight:900;color:${col};margin-bottom:8px;">${pathNames[ch.path]||ch.path}</div>
-      <div style="font-size:12px;color:#94a3b8;font-weight:700;margin-bottom:24px;">"${ch.text}"</div>
-      <button onclick="closeFmPopup()" style="padding:13px 36px;border-radius:14px;background:linear-gradient(135deg,${col},${col}aa);border:none;color:#fff;font-size:13px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">متابعة ⚔️</button>
-    </div>`;
-  setTimeout(closeFmPopup, 4000);
+  const isRedo = _fmRedoMode;
+  if(isRedo){
+    _recordFlowChoiceRedo(_fmCurrentHabit, idx, ch);
+    _fmRedoMode = false;
+  } else {
+    _recordFlowChoice(_fmCurrentHabit, idx, ch, false);
+  }
+  _showFlowResult(ch, isRedo);
 }
 
 function _recordFlowChoice(habit, idx, ch, isAuto){
@@ -18983,7 +19138,11 @@ function _recordFlowChoice(habit, idx, ch, isAuto){
   };
 
   // ── تسجيل تلقائي في جدول العادات عند التفوق أو النجاح ──
-  if(ch.path === 'excellence' || ch.path === 'success'){
+  // المسارات الأعلى (qudwa, abid, talib, wai, mumaris) = إنجاز
+  // المسارات الأدنى (bahith, thaqafi) = عدم إنجاز أو جهد بسيط
+  const isPositivePath = ['qudwa','abid','talib','wai','mumaris','excellence','success'].includes(ch.path);
+  const isTopPath = ['qudwa','abid','excellence'].includes(ch.path);
+  if(isPositivePath){
     // هل هي مهمة؟
     if(habit.isCoreTask && habit._taskRef){
       const t = (state.tasks||[]).find(x=>x.id===habit._taskRef);
@@ -19019,12 +19178,13 @@ function _recordFlowChoice(habit, idx, ch, isAuto){
   }
 
   saveState();
-  if(!isAuto && ch.path === 'failure'){
+  const isNegativePath = ['bahith','thaqafi','failure'].includes(ch.path);
+  if(!isAuto && isNegativePath){
     showToast(`🗺️ تم تسجيل: ${ch.text}`);
     // ── اقتراح العادات السلبية عند الفشل ──
     setTimeout(()=> _showNegativeHabitsSuggestion(habit), 400);
   }
-  // Excellence/success: toast already shown by checkHabit/checkPaidHabit + our custom one
+  // Positive paths: toast already shown by checkHabit/checkPaidHabit + our custom one
 }
 
 // ════════════════════════════════════════════════
@@ -19091,6 +19251,10 @@ function rebuildFmPopup(){
 
 function buildFmPopupInner(){
   return `<div class="fm-inner" style="background:linear-gradient(135deg,#05070a,#0b0e14);border:1px solid rgba(255,255,255,0.1);border-radius:2rem;padding:28px 24px;max-width:420px;width:calc(100% - 32px);max-height:90vh;overflow-y:auto;box-shadow:0 0 80px rgba(168,85,247,0.25),0 0 0 1px rgba(168,85,247,0.12);">
+    <!-- Glowing intention box -->
+    <div style="margin-bottom:14px;padding:8px 12px;border-radius:10px;border:1px solid rgba(250,204,21,0.4);background:rgba(250,204,21,0.07);text-align:center;animation:intentionPulse 3s ease-in-out infinite;">
+      <div style="font-size:9px;font-weight:900;color:#fbbf24;">✨ طلب رضوان الله والوصول إليه ✨</div>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <span id="fm-habit-icon" style="font-size:28px;"></span>
       <div style="flex:1;">
@@ -19148,6 +19312,205 @@ function fmNavDay(delta){
   if(c) renderFlowMapTab(c);
 }
 
+// ════════════════════════════════════════════════
+//  FLOW MAP PATH SYSTEM — مسارات خريطة التدفق
+// ════════════════════════════════════════════════
+
+// المسارات الافتراضية (7 مسارات إسلامية)
+const FM_DEFAULT_PATHS = [
+  { id:'qudwa',    icon:'👑', color:'#f59e0b', shortName:'القدوة',      name:'المسلم القدوة',      desc:'يجسد السنة ويعيش القرآن في كل لحظة، ويقود بعلمه وعمله معاً' },
+  { id:'abid',     icon:'🤲', color:'#a78bfa', shortName:'العابد',      name:'العابد المخلص',      desc:'يجمع بين الحب الصادق لله والمجاهدة المستمرة، يعيش في ذكر دائم' },
+  { id:'talib',    icon:'📚', color:'#38bdf8', shortName:'طالب العلم',  name:'طالب العلم',         desc:'يلتزم بفهم الدين وتطبيقه بعمق ويبدأ في تعليم غيره والدعوة بحكمة' },
+  { id:'wai',      icon:'🧭', color:'#34d399', shortName:'الواعي',      name:'المسلم الواعي',      desc:'يصبح الإسلام أولوية واضحة في حياته ويتعمق في سيرة النبي ﷺ' },
+  { id:'mumaris',  icon:'⚡', color:'#fb923c', shortName:'الممارس',     name:'المسلم الممارس',     desc:'ينتقل من مرحلة النية إلى العمل الجاد ويحافظ على أداء الفرائض' },
+  { id:'bahith',   icon:'🔍', color:'#f472b6', shortName:'الباحث',      name:'الباحث المستيقظ',   desc:'تبدأ عنده التحولات الحقيقية ويسعى بصدق للتعلم وفهم معنى الإسلام' },
+  { id:'thaqafi',  icon:'🌱', color:'#94a3b8', shortName:'الثقافي',     name:'المسلم الثقافي',     desc:'مسلم بالاسم والانتماء الاجتماعي وبذرة الإيمان لا تزال كامنة بداخله' },
+];
+
+function getFmPaths(){
+  // مزج المسارات المخصصة مع الافتراضية
+  const custom = (state.fmCustomPaths || []);
+  return [...FM_DEFAULT_PATHS, ...custom];
+}
+
+function getFmPathColors(){
+  const c = {}; getFmPaths().forEach(p => c[p.id] = p.color); return c;
+}
+function getFmPathLabels(){
+  const c = {}; getFmPaths().forEach(p => c[p.id] = p.icon + ' ' + p.shortName); return c;
+}
+function getFmPathFullNames(){
+  const c = {}; getFmPaths().forEach(p => c[p.id] = p.icon + ' ' + p.name); return c;
+}
+
+// عرض وصف المسار عند تغيير الـ select في النموذج
+function showPathHint(hintId, pathId){
+  const el = document.getElementById(hintId);
+  if(!el) return;
+  const p = getFmPaths().find(x=>x.id===pathId);
+  el.textContent = p ? p.desc : '';
+  el.style.color = p ? p.color : '#64748b';
+}
+
+// ── النقر على عقدة في الخريطة لإعادة الاختيار ──
+function fmNodeClick(habitId, type){
+  // ابحث عن العادة
+  const all = [...(state.habits||[]), ...(state.paidHabits||[])];
+  let habit = all.find(h=>String(h.id)===String(habitId));
+  if(!habit){
+    // ربما مهمة
+    const taskId = String(habitId).replace('task_','');
+    const task = (state.tasks||[]).find(t=>String(t.id)===String(taskId));
+    if(task){
+      habit = {
+        id: 'task_'+task.id, _taskRef: task.id, name: task.name, icon: task.icon||'📖',
+        coreTime: task.coreTime || task.calStartTime,
+        coreQuestion: task.coreQuestion || 'كيف كان أداؤك في هذه المهمة؟',
+        coreChoices: task.coreChoices || [],
+        isCoreTask: true,
+      };
+    }
+  }
+  if(!habit) return;
+  // عرض نافذة القرار للإعادة مع علامة "إعادة تسجيل"
+  _fmRedoMode = true;
+  showCoreHabitPopup(habit, false);
+}
+let _fmRedoMode = false;
+
+// ── إدارة المسارات (إضافة / تعديل) ──
+function openFmPathManager(){
+  const paths = getFmPaths();
+  const mc = document.getElementById('modal-content');
+  const mo = document.getElementById('modal-overlay');
+  mc.innerHTML = `
+  <div style="font-family:'Cairo',sans-serif;direction:rtl;">
+    <div style="font-size:16px;font-weight:900;color:#f1f5f9;margin-bottom:4px;">🗺️ إدارة مسارات خريطة التدفق</div>
+
+    <!-- Glowing intention box -->
+    <div style="margin-bottom:14px;padding:10px 14px;border-radius:12px;border:1.5px solid rgba(250,204,21,0.4);background:rgba(250,204,21,0.07);text-align:center;">
+      <div style="font-size:10px;font-weight:900;color:#fbbf24;">✨ طلب رضوان الله والوصول إليه ✨</div>
+    </div>
+
+    <div style="max-height:300px;overflow-y:auto;margin-bottom:14px;">
+      ${paths.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);margin-bottom:6px;">
+        <span style="font-size:20px;">${p.icon}</span>
+        <div style="flex:1;">
+          <div style="font-size:11px;font-weight:900;color:${p.color};">${p.name}</div>
+          <div style="font-size:9px;color:#475569;font-weight:700;">${p.desc||''}</div>
+        </div>
+        ${!FM_DEFAULT_PATHS.find(d=>d.id===p.id) ? `
+          <button onclick="fmEditCustomPath('${p.id}')" style="padding:4px 8px;border-radius:8px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);color:#818cf8;font-size:9px;font-weight:900;cursor:pointer;">تعديل</button>
+          <button onclick="fmDeleteCustomPath('${p.id}')" style="padding:4px 8px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);color:#f87171;font-size:9px;font-weight:900;cursor:pointer;">حذف</button>
+        ` : `<span style="font-size:8px;color:#334155;font-weight:700;">افتراضي</span>`}
+      </div>`).join('')}
+    </div>
+
+    <div style="background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.2);border-radius:12px;padding:12px;margin-bottom:12px;">
+      <div style="font-size:10px;font-weight:900;color:#a855f7;margin-bottom:8px;">➕ إضافة مسار مخصص</div>
+      <input id="fm-new-path-name" placeholder="اسم المسار..." style="width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:11px;font-weight:900;margin-bottom:6px;font-family:'Cairo',sans-serif;box-sizing:border-box;">
+      <input id="fm-new-path-icon" placeholder="أيقونة (إيموجي)..." maxlength="2" style="width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:11px;font-weight:900;margin-bottom:6px;font-family:'Cairo',sans-serif;box-sizing:border-box;">
+      <input id="fm-new-path-color" type="color" value="#a855f7" style="width:100%;height:36px;border-radius:8px;background:none;border:1px solid rgba(255,255,255,0.1);cursor:pointer;margin-bottom:6px;">
+      <input id="fm-new-path-desc" placeholder="وصف المسار..." style="width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:10px;font-weight:700;font-family:'Cairo',sans-serif;box-sizing:border-box;">
+      <button onclick="fmAddCustomPath()" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;background:linear-gradient(135deg,#a855f7,#7c3aed);border:none;color:#fff;font-size:11px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">إضافة المسار</button>
+    </div>
+    <button onclick="closeModal()" style="width:100%;padding:11px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#64748b;font-size:12px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">إغلاق</button>
+  </div>`;
+  mo.classList.remove('hidden');
+}
+
+function fmAddCustomPath(){
+  const name  = document.getElementById('fm-new-path-name')?.value?.trim();
+  const icon  = document.getElementById('fm-new-path-icon')?.value?.trim() || '⭐';
+  const color = document.getElementById('fm-new-path-color')?.value || '#a855f7';
+  const desc  = document.getElementById('fm-new-path-desc')?.value?.trim() || '';
+  if(!name){ showToast('⚠️ أدخل اسم المسار'); return; }
+  if(!state.fmCustomPaths) state.fmCustomPaths = [];
+  const id = 'custom_' + Date.now();
+  state.fmCustomPaths.push({ id, icon, color, shortName: name, name, desc });
+  saveState();
+  showToast('✅ تم إضافة المسار: ' + name);
+  openFmPathManager();
+}
+
+function fmDeleteCustomPath(id){
+  if(!state.fmCustomPaths) return;
+  state.fmCustomPaths = state.fmCustomPaths.filter(p=>p.id!==id);
+  saveState();
+  showToast('🗑️ تم حذف المسار');
+  openFmPathManager();
+}
+
+function fmEditCustomPath(id){
+  const path = (state.fmCustomPaths||[]).find(p=>p.id===id);
+  if(!path) return;
+  const mc = document.getElementById('modal-content');
+  mc.innerHTML = `
+  <div style="font-family:'Cairo',sans-serif;direction:rtl;">
+    <div style="font-size:14px;font-weight:900;color:#f1f5f9;margin-bottom:12px;">✏️ تعديل المسار</div>
+    <input id="fm-edit-name" value="${path.name}" placeholder="اسم المسار..." style="width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:11px;font-weight:900;margin-bottom:8px;font-family:'Cairo',sans-serif;box-sizing:border-box;">
+    <input id="fm-edit-icon" value="${path.icon}" placeholder="أيقونة..." maxlength="2" style="width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:11px;font-weight:900;margin-bottom:8px;font-family:'Cairo',sans-serif;box-sizing:border-box;">
+    <input id="fm-edit-color" type="color" value="${path.color}" style="width:100%;height:36px;border-radius:8px;background:none;border:1px solid rgba(255,255,255,0.1);cursor:pointer;margin-bottom:8px;">
+    <input id="fm-edit-desc" value="${path.desc||''}" placeholder="وصف..." style="width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:10px;font-weight:700;font-family:'Cairo',sans-serif;box-sizing:border-box;">
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button onclick="fmSaveEditPath('${id}')" style="flex:1;padding:10px;border-radius:10px;background:linear-gradient(135deg,#a855f7,#7c3aed);border:none;color:#fff;font-size:11px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">حفظ</button>
+      <button onclick="openFmPathManager()" style="flex:1;padding:10px;border-radius:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#64748b;font-size:11px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">رجوع</button>
+    </div>
+  </div>`;
+}
+
+function fmSaveEditPath(id){
+  const p = (state.fmCustomPaths||[]).find(x=>x.id===id);
+  if(!p) return;
+  p.name = document.getElementById('fm-edit-name')?.value?.trim() || p.name;
+  p.shortName = p.name;
+  p.icon = document.getElementById('fm-edit-icon')?.value?.trim() || p.icon;
+  p.color = document.getElementById('fm-edit-color')?.value || p.color;
+  p.desc = document.getElementById('fm-edit-desc')?.value?.trim() || '';
+  saveState();
+  showToast('✅ تم تحديث المسار');
+  openFmPathManager();
+}
+
+// ── إعادة تسجيل عادة (Redo) تؤثر على ما بعدها ──
+function _recordFlowChoiceRedo(habit, idx, ch){
+  const dateKey = fmDateKey(_fmDayOffset);
+  const key = dateKey + '_' + habit.id;
+  if(!state.flowMapLog) state.flowMapLog = {};
+
+  const oldPath = (state.flowMapLog[key] || {}).path;
+
+  state.flowMapLog[key] = {
+    habitId: habit.id, habitName: habit.name, habitIcon: habit.icon,
+    choiceIdx: idx, choiceText: ch.text, path: ch.path,
+    time: new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}),
+    date: dateKey, auto: false, redone: true
+  };
+
+  // إذا تغير المسار، امسح تسجيلات العادات التي بعدها لإعادة السؤال فيها
+  if(oldPath && oldPath !== ch.path){
+    // ابحث عن العادات التي بعد هذه العادة في نفس اليوم
+    const all = [...(state.habits||[]), ...(state.paidHabits||[])].filter(h=>h.isCoreHabit && h.coreTime && !h._coreHidden);
+    const coreTasks = (state.tasks||[]).filter(t=>t.isCoreTask && (t.coreTime||t.calStartTime)).map(t=>({...t, id:'task_'+t.id, coreTime:t.coreTime||t.calStartTime}));
+    const allItems = [...all, ...coreTasks].sort((a,b)=>(a.coreTime||'').localeCompare(b.coreTime||''));
+    const thisHabit = allItems.find(h=>String(h.id)===String(habit.id));
+    if(thisHabit){
+      const thisTime = thisHabit.coreTime || '';
+      const laterHabits = allItems.filter(h => (h.coreTime||'') > thisTime && String(h.id) !== String(habit.id));
+      laterHabits.forEach(h => {
+        const laterKey = dateKey + '_' + h.id;
+        if(state.flowMapLog[laterKey]){ delete state.flowMapLog[laterKey]; }
+      });
+      if(laterHabits.length > 0){
+        showToast(`🔄 تم مسح ${laterHabits.length} تسجيل بعد هذه العادة — أعد الاختيار فيها`);
+      }
+    }
+  }
+
+  saveState();
+}
+
 function renderFlowMapTab(c){
   const dateKey = fmDateKey(_fmDayOffset);
   const isToday = _fmDayOffset === 0;
@@ -19178,8 +19541,8 @@ function renderFlowMapTab(c){
     record: log[dateKey+'_'+h.id] || null
   }));
 
-  const pathColors = {excellence:'#f59e0b', success:'#10b981', failure:'#ef4444'};
-  const pathNames  = {excellence:'🌟 تفوق', success:'✅ نجاح', failure:'❌ فشل'};
+  const pathColors = getFmPathColors();
+  const pathNames  = getFmPathLabels();
 
   c.innerHTML = `
   <div style="font-family:'Cairo',sans-serif;direction:rtl;padding:16px;padding-bottom:120px;">
@@ -19188,6 +19551,9 @@ function renderFlowMapTab(c){
     <div style="text-align:center;margin-bottom:20px;">
       <div style="font-size:10px;font-weight:900;color:#a855f7;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;">🗺️ FLOW MAP</div>
       <h1 style="font-size:22px;font-weight:900;color:#f1f5f9;margin-bottom:10px;">خريطة التدفق</h1>
+
+      <!-- Manage paths button -->
+      <button onclick="openFmPathManager()" style="margin-bottom:10px;padding:6px 14px;border-radius:20px;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.25);color:#a855f7;font-size:9px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">⚙️ إدارة المسارات</button>
 
       <!-- أسهم التنقل -->
       <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
@@ -19208,6 +19574,24 @@ function renderFlowMapTab(c){
 
       ${isToday ? `<div style="margin-top:8px;display:inline-block;font-size:9px;font-weight:900;color:#a855f7;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.25);padding:3px 10px;border-radius:99px;">● مباشر</div>` : ''}
     </div>
+
+    <!-- Path Descriptions -->
+    <details style="margin-bottom:16px;">
+      <summary style="font-size:10px;font-weight:900;color:#a855f7;cursor:pointer;padding:10px 14px;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.2);border-radius:12px;list-style:none;display:flex;align-items:center;justify-content:space-between;">
+        <span>📖 أوصاف المسارات الإسلامية السبعة</span>
+        <span>▼</span>
+      </summary>
+      <div style="margin-top:6px;background:rgba(5,7,10,0.6);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:12px;">
+        ${FM_DEFAULT_PATHS.map(p => `
+        <div style="display:flex;gap:10px;padding:8px;border-radius:10px;margin-bottom:6px;background:${p.color}08;border:1px solid ${p.color}20;">
+          <span style="font-size:20px;flex-shrink:0;">${p.icon}</span>
+          <div>
+            <div style="font-size:11px;font-weight:900;color:${p.color};margin-bottom:2px;">${p.name}</div>
+            <div style="font-size:9px;color:#64748b;font-weight:700;line-height:1.5;">${p.desc}</div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </details>
 
     <!-- Path Summary Scores -->
     ${renderPathScores(entries)}
@@ -19232,15 +19616,16 @@ function renderFlowMapTab(c){
             const typeTag = habit.isCoreTask
               ? `<span style="font-size:8px;color:#6366f1;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);padding:1px 6px;border-radius:6px;margin-right:4px;">مهمة</span>`
               : '';
-            return `<div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);margin-bottom:8px;">
+            return `<div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);margin-bottom:8px;cursor:pointer;" onclick="fmNodeClick('${habit.id}','${habit.isCoreTask?'task':'habit'}')">
               <span style="font-size:20px;">${habit.icon||'🎯'}</span>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:11px;font-weight:900;color:#e2e8f0;">${typeTag}${habit.name}</div>
                 ${record
-                  ? `<div style="font-size:9px;color:#475569;font-weight:700;margin-top:2px;">"${record.choiceText}" · ${record.time}</div>`
+                  ? `<div style="font-size:9px;color:#475569;font-weight:700;margin-top:2px;">"${record.choiceText}" · ${record.time}${record.redone?' 🔄':''}</div>`
                   : `<div style="font-size:9px;color:#475569;font-weight:700;margin-top:2px;">🕐 ${habit.coreTime}</div>`}
               </div>
               ${status}
+              <span style="font-size:14px;color:#334155;margin-right:2px;" title="اضغط لإعادة الاختيار">↺</span>
             </div>`;
           }).join('')
       }
@@ -19250,117 +19635,123 @@ function renderFlowMapTab(c){
 }
 
 function renderPathScores(entries){
-  let ex=0, su=0, fa=0, total=0;
-  entries.forEach(({record})=>{
+  const pathDefs = getFmPaths();
+  const counts = {};
+  pathDefs.forEach(p => counts[p.id] = 0);
+  let total = 0;
+  entries.forEach(({record}) => {
     if(!record) return;
     total++;
-    if(record.path==='excellence') ex++;
-    else if(record.path==='success') su++;
-    else fa++;
+    if(counts[record.path] !== undefined) counts[record.path]++;
+    else counts[record.path] = 1;
   });
-  const pct = p => total ? Math.round(p/total*100) : 0;
-  const dominantPath = ex>=su && ex>=fa ? 'excellence' : su>=fa ? 'success' : 'failure';
-  const pathMsg = {
-    excellence: 'يوم استثنائي — أنت على مسار التفوق! 🏆',
-    success:    'يوم ناجح — استمر في النمو ✅',
-    failure:    'يوم صعب — غداً فرصة جديدة 💪'
-  };
+
+  // Find dominant path
+  let dominantId = pathDefs[0].id, dominantCount = -1;
+  pathDefs.forEach(p => { if((counts[p.id]||0) > dominantCount){ dominantCount=(counts[p.id]||0); dominantId=p.id; } });
+  const dominant = pathDefs.find(p=>p.id===dominantId) || pathDefs[0];
+
+  const pct = p => total ? Math.round((counts[p]||0)/total*100) : 0;
+
+  // Show up to 7 paths in a scrollable row
+  const scoreCards = pathDefs.map(p => `
+    <div style="min-width:80px;background:${p.color}10;border:1.5px solid ${p.color}${dominantId===p.id?'55':'20'};border-radius:14px;padding:10px 8px;text-align:center;flex-shrink:0;">
+      <div style="font-size:16px;margin-bottom:3px;">${p.icon}</div>
+      <div style="font-size:16px;font-weight:900;color:${p.color};">${counts[p.id]||0}</div>
+      <div style="font-size:8px;font-weight:900;color:#78716c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px;">${p.shortName}</div>
+      <div style="font-size:8px;color:${p.color};font-weight:700;">${pct(p.id)}%</div>
+    </div>`).join('');
+
+  // Divine intention box — glowing
+  const intentionBox = `
+  <div style="margin-bottom:14px;padding:12px 16px;border-radius:14px;border:1.5px solid rgba(250,204,21,0.45);background:linear-gradient(135deg,rgba(250,204,21,0.08),rgba(168,85,247,0.08));animation:intentionPulse 3s ease-in-out infinite;text-align:center;">
+    <div style="font-size:11px;font-weight:900;color:#fbbf24;letter-spacing:0.04em;">✨ طلب رضوان الله والوصول إليه ✨</div>
+  </div>`;
+
   return `
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
-    <div style="background:rgba(245,158,11,0.08);border:1.5px solid rgba(245,158,11,${dominantPath==='excellence'?'0.5':'0.15'});border-radius:16px;padding:14px;text-align:center;">
-      <div style="font-size:18px;margin-bottom:4px;">🌟</div>
-      <div style="font-size:18px;font-weight:900;color:#f59e0b;">${ex}</div>
-      <div style="font-size:9px;font-weight:900;color:#78716c;">تفوق</div>
-      <div style="font-size:9px;color:#f59e0b;font-weight:700;">${pct(ex)}%</div>
-    </div>
-    <div style="background:rgba(16,185,129,0.08);border:1.5px solid rgba(16,185,129,${dominantPath==='success'?'0.5':'0.15'});border-radius:16px;padding:14px;text-align:center;">
-      <div style="font-size:18px;margin-bottom:4px;">✅</div>
-      <div style="font-size:18px;font-weight:900;color:#10b981;">${su}</div>
-      <div style="font-size:9px;font-weight:900;color:#78716c;">نجاح</div>
-      <div style="font-size:9px;color:#10b981;font-weight:700;">${pct(su)}%</div>
-    </div>
-    <div style="background:rgba(239,68,68,0.08);border:1.5px solid rgba(239,68,68,${dominantPath==='failure'?'0.5':'0.15'});border-radius:16px;padding:14px;text-align:center;">
-      <div style="font-size:18px;margin-bottom:4px;">❌</div>
-      <div style="font-size:18px;font-weight:900;color:#ef4444;">${fa}</div>
-      <div style="font-size:9px;font-weight:900;color:#78716c;">فشل</div>
-      <div style="font-size:9px;color:#ef4444;font-weight:700;">${pct(fa)}%</div>
-    </div>
+  ${intentionBox}
+  <div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:14px;padding-bottom:4px;scrollbar-width:none;">
+    ${scoreCards}
   </div>
-  ${total > 0 ? `<div style="text-align:center;font-size:11px;font-weight:900;padding:10px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);margin-bottom:16px;color:#94a3b8;">${pathMsg[dominantPath]}</div>` : ''}`;
+  ${total > 0 ? `<div style="text-align:center;font-size:11px;font-weight:900;padding:10px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);margin-bottom:14px;color:${dominant.color};">${dominant.icon} ${dominant.name}</div>` : ''}`;
 }
 
 function renderFlowSVG(entries){
   if(!entries.length) return `<div style="text-align:center;color:#1e293b;font-size:11px;padding:40px;">لا توجد عادات أساسية بعد</div>`;
 
-  // ══ HORIZONTAL layout — عرض أفقي ══
-  // الخريطة تسير من اليسار (بداية اليوم) لليمين (نهاية اليوم)
-  // 3 مسارات: تفوق (أعلى) / نجاح (وسط) / فشل (أسفل)
-  const pathColors = { excellence:'#f59e0b', success:'#10b981', failure:'#ef4444' };
-  const pathNames  = { excellence:'🌟 تفوق', success:'✅ نجاح', failure:'❌ فشل' };
+  const pathDefs = getFmPaths();
+  const pathColors = getFmPathColors();
+  const pathNames  = getFmPathLabels();
 
   const nodeR   = 24;
-  const colW    = 130;   // مسافة أفقية بين كل عقدة وتانية
-  const PADL    = 30;   // padding يسار
+  const colW    = 130;
+  const PADL    = 30;
   const W       = PADL + entries.length * colW + 50;
-  const H       = 320;
-  const rowY    = { excellence: 70, success: 160, failure: 250 };
+  const nPaths  = pathDefs.length;
+  const H       = Math.max(320, nPaths * 80 + 60);
 
-  // ── خلفية المسارات الأفقية ──
+  // Distribute rows evenly
+  const rowY = {};
+  pathDefs.forEach((p, i) => {
+    rowY[p.id] = Math.round(40 + i * (H - 80) / Math.max(nPaths - 1, 1));
+  });
+  const midPathId = pathDefs[Math.floor(nPaths/2)].id;
+
+  // Background rows
   let rowBgs = '';
-  Object.entries(rowY).forEach(([path, y]) => {
+  pathDefs.forEach(p => {
+    const y = rowY[p.id];
     rowBgs += `<rect x="${PADL-8}" y="${y-nodeR-6}" width="${W - PADL}" height="${nodeR*2+12}" rx="14"
-      fill="${pathColors[path]}07" stroke="${pathColors[path]}16" stroke-width="1"/>`;
+      fill="${pathColors[p.id]}07" stroke="${pathColors[p.id]}16" stroke-width="1"/>`;
   });
 
-  // ── عناوين المسارات على اليمين ──
-  const rowLabels = Object.entries(rowY).map(([path, y]) =>
-    `<text x="${W - 4}" y="${y+5}" text-anchor="end" fill="${pathColors[path]}"
-      font-size="11" font-weight="900" font-family="Cairo,sans-serif">${pathNames[path]}</text>`
+  // Path labels on right
+  const rowLabels = pathDefs.map(p =>
+    `<text x="${W - 4}" y="${rowY[p.id]+5}" text-anchor="end" fill="${pathColors[p.id]}"
+      font-size="10" font-weight="900" font-family="Cairo,sans-serif">${pathNames[p.id]}</text>`
   ).join('');
 
-  // ── خط زمني أفقي (وسط) ──
-  const timelineY = H / 2;
-  let lines = '', dots = '', labels = '';
+  let lines = '', dots = '', labels = '', clickAreas = '';
   let prevX = null, prevY = null;
 
   entries.forEach(({habit, record}, i) => {
     const cx   = PADL + i * colW + nodeR + 10;
     const path = record ? record.path : null;
-    const cy   = path ? rowY[path] : rowY.success;
-    const col  = path ? pathColors[path] : '#1e293b';
+    const cy   = path ? (rowY[path] ?? rowY[midPathId]) : rowY[midPathId];
+    const col  = path ? (pathColors[path] || '#64748b') : '#1e293b';
     const filled = !!record;
 
-    // خط من العقدة السابقة
+    // Line from previous
     if(prevX !== null){
       const midX = (prevX + cx) / 2;
       if(filled){
         lines += `<path d="M ${prevX} ${prevY} C ${midX} ${prevY}, ${midX} ${cy}, ${cx} ${cy}"
           fill="none" stroke="${col}" stroke-width="2.5" opacity="0.8"/>`;
       } else {
-        lines += `<path d="M ${prevX} ${prevY} C ${midX} ${prevY}, ${midX} ${rowY.success}, ${cx} ${rowY.success}"
+        lines += `<path d="M ${prevX} ${prevY} C ${midX} ${prevY}, ${midX} ${rowY[midPathId]}, ${cx} ${rowY[midPathId]}"
           fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="5,4"/>`;
       }
     }
 
-    // النقطة
+    // Node
     if(filled){
-      // ظل خلف الدائرة
       dots += `<circle cx="${cx}" cy="${cy}" r="${nodeR+6}" fill="${col}18"/>`;
       dots += `<circle cx="${cx}" cy="${cy}" r="${nodeR}" fill="${col}28" stroke="${col}" stroke-width="2.5"/>`;
       dots += `<text x="${cx}" y="${cy+7}" text-anchor="middle" font-size="18" font-family="Cairo,sans-serif">${habit.icon||'🎯'}</text>`;
+      // Small redo indicator
+      dots += `<circle cx="${cx+nodeR-4}" cy="${cy-nodeR+4}" r="8" fill="#1e293b" stroke="${col}" stroke-width="1.5"/>`;
+      dots += `<text x="${cx+nodeR-4}" y="${cy-nodeR+8}" text-anchor="middle" font-size="9" fill="${col}" font-family="Cairo,sans-serif">↺</text>`;
     } else {
       dots += `<circle cx="${cx}" cy="${cy}" r="${nodeR}" fill="rgba(10,16,30,0.9)" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,3"/>`;
       dots += `<text x="${cx}" y="${cy+6}" text-anchor="middle" font-size="15" fill="#334155" font-family="Cairo,sans-serif">⏳</text>`;
     }
 
-    // اسم العادة تحت/فوق العقدة
+    // Label
     const labelY = cy > H/2 ? cy + nodeR + 16 : cy - nodeR - 6;
     const nameShort = habit.name.length > 6 ? habit.name.slice(0,6)+'…' : habit.name;
     labels += `<text x="${cx}" y="${labelY}" text-anchor="middle"
       fill="${filled ? '#94a3b8':'#334155'}" font-size="10" font-weight="700"
       font-family="Cairo,sans-serif">${nameShort}</text>`;
-
-    // وقت العادة
     if(habit.coreTime){
       const timeY = cy > H/2 ? cy + nodeR + 28 : cy - nodeR - 16;
       labels += `<text x="${cx}" y="${timeY}" text-anchor="middle"
@@ -19368,8 +19759,12 @@ function renderFlowSVG(entries){
         font-family="Cairo,sans-serif">${habit.coreTime}</text>`;
     }
 
+    // Clickable overlay — always clickable (redo or first time)
+    clickAreas += `<circle cx="${cx}" cy="${cy}" r="${nodeR+10}" fill="transparent" style="cursor:pointer;"
+      onclick="fmNodeClick('${habit.id}','${habit.isCoreTask?'task':'habit'}')"/>`;
+
     if(filled){ prevX = cx; prevY = cy; }
-    else { prevX = cx; prevY = rowY.success; }
+    else { prevX = cx; prevY = rowY[midPathId]; }
   });
 
   return `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -19380,6 +19775,7 @@ function renderFlowSVG(entries){
     ${lines}
     ${dots}
     ${labels}
+    ${clickAreas}
   </svg>
   </div>`;
 }
@@ -19444,10 +19840,12 @@ function enableCoreHabitsVisible(){
 // ══════════════════════════════════════════════════
 //  تغيير المدينة → تحديث مواقيت الصلاة تلقائياً
 // ══════════════════════════════════════════════════
-function onCityChange(city){
+async function onCityChange(city){
   if(!city) return;
-  const times = _getPrayerTimesForCity(city);
-  if(!times){ showToast('⚠️ المدينة غير مدعومة'); return; }
+  if(!_CITY_COORDS[city]){ showToast('⚠️ المدينة غير مدعومة'); return; }
+  showToast('🌐 جاري تحديث مواقيت الصلاة...');
+  const times = await _fetchPrayerTimesFromAPI(city);
+  if(!times){ showToast('❌ تعذّر جلب المواقيت — تحقق من الاتصال'); return; }
   // تحديث أوقات العادات الأساسية الموجودة
   if(!state.habits) return;
   function minusTenCity(t){
@@ -19505,10 +19903,13 @@ function checkMissedHabitsOnWakeup(){
   // جمع العادات الأساسية التي فات وقتها ولم يُجب عليها اليوم
   const missed = state.habits.filter(h => {
     if(!h.isCoreHabit || !h.coreTime || h._coreHidden) return false;
-    if(h.flowMapLog && h.flowMapLog[todayKey]) return false; // أجاب عليها
+    // التحقق من state.flowMapLog (المفتاح الصحيح المستخدم في النظام)
+    if(fmDoneToday(h.id)) return false;
+    // لا نعرضها لو ظهرت بالفعل اليوم (popup في وقتها)
+    if(fmShownToday(h.id)) return false;
     const [hh, mm] = h.coreTime.split(':').map(Number);
     const habitMins = hh*60+mm;
-    return habitMins < nowMins; // فات وقتها
+    return habitMins < nowMins - 5; // فات وقتها بأكثر من 5 دقائق
   });
 
   if(missed.length === 0) return;
@@ -19534,11 +19935,11 @@ function showNextMissedHabit(){
   const total = _missedHabitsQueue.length;
   const current = _missedHabitsIndex + 1;
 
-  // تعديل الخيارات — منع التفوق والنجاح، السماح فقط بالفشل
+  // جميع الخيارات متاحة — بما فيها التفوق والنجاح
   const forcedChoices = (habit.coreChoices || []).map(ch => ({
     ...ch,
-    disabled: ch.path !== 'failure',
-    disabledReason: ch.path !== 'failure' ? '⛔ هذه العادة فاتت — لا يمكن اختيار التفوق أو النجاح' : null
+    disabled: false,
+    disabledReason: null
   }));
 
   const mc = document.getElementById('modal-content');
@@ -19554,21 +19955,22 @@ function showNextMissedHabit(){
       </div>
       <div style="font-size:10px;font-weight:900;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:4px 10px;border-radius:99px;">فائتة</div>
     </div>
-    <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:10px 12px;margin-bottom:14px;">
-      <div style="font-size:10px;font-weight:900;color:#fca5a5;">⚠️ تنبيه: هذه العادة فاتت — لا يمكنك اختيار «تفوق» أو «ناجح»</div>
+    <div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:10px 12px;margin-bottom:14px;">
+      <div style="font-size:10px;font-weight:900;color:#fbbf24;">⏰ عادة فائتة — سجّل ما فعلته بصدق</div>
     </div>
     <h3 style="font-size:14px;font-weight:900;color:#f1f5f9;text-align:center;margin-bottom:14px;">${habit.coreQuestion || 'ماذا فعلت؟'}</h3>
     <div style="display:flex;flex-direction:column;gap:7px;">
-      ${forcedChoices.map((ch,i)=>`
+      ${forcedChoices.map((ch,i)=>{
+        const _pc = getFmPathColors();
+        const _col = _pc[ch.path] || '#64748b';
+        return `
         <button onclick="${ch.disabled ? `showMissedHabitWarning('${ch.disabledReason}')` : `recordMissedHabit('${habit.id}','${ch.path}',${i})`}"
           style="width:100%;padding:11px 14px;border-radius:12px;text-align:right;font-family:'Cairo',sans-serif;font-size:11px;font-weight:900;cursor:${ch.disabled?'not-allowed':'pointer'};transition:all 0.15s;
-          ${ch.path==='excellence' ? 'background:rgba(250,204,21,0.08);border:1px solid rgba(250,204,21,0.2);color:#fbbf24;' :
-            ch.path==='success' ? 'background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);color:#34d399;' :
-            'background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#f87171;'}
+          background:${_col}12;border:1px solid ${_col}44;color:${_col};
           ${ch.disabled ? 'opacity:0.35;filter:grayscale(0.6);' : ''}">
-          ${ch.disabled ? '🔒 ' : (ch.path==='excellence'?'⭐ ':ch.path==='success'?'✅ ':'❌ ')}${ch.text}
-        </button>
-      `).join('')}
+          ${ch.disabled ? '🔒 ' : ''}${ch.text}
+        </button>`;
+      }).join('')}
     </div>
     <div style="margin-top:12px;display:flex;gap:8px;">
       <button onclick="skipMissedHabit()" style="flex:1;padding:9px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#475569;font-size:10px;font-weight:900;cursor:pointer;font-family:'Cairo',sans-serif;">تخطي ←</button>
@@ -19584,7 +19986,7 @@ function showNextMissedHabit(){
 }
 
 function showMissedHabitWarning(msg){
-  showToast(msg || '⛔ لا يمكن اختيار هذا الخيار للعادة الفائتة');
+  showToast(msg || '⛔ لا يمكن اختيار هذا الخيار');
 }
 
 function recordMissedHabit(habitId, path, choiceIdx){
@@ -19592,12 +19994,29 @@ function recordMissedHabit(habitId, path, choiceIdx){
   const todayKey = now.toISOString().slice(0,10);
   const habit = state.habits.find(h=>String(h.id)===String(habitId));
   if(habit){
-    if(!habit.flowMapLog) habit.flowMapLog = {};
-    habit.flowMapLog[todayKey] = { path, choiceIdx, time: Date.now(), missed: true };
-    if(path==='failure'){
+    // التسجيل في state.flowMapLog (المفتاح الموحّد المستخدم في النظام)
+    if(!state.flowMapLog) state.flowMapLog = {};
+    const fmKey = todayKey + '_' + habit.id;
+    state.flowMapLog[fmKey] = { path, choiceIdx, time: Date.now(), missed: true };
+    // تسجيل أنه ظهر اليوم حتى لا يظهر مرة ثانية
+    if(!state._fmShownToday) state._fmShownToday = {};
+    state._fmShownToday[habit.id] = true;
+    const isNeg = ['bahith','thaqafi','failure'].includes(path);
+    const isTop = ['qudwa','abid','excellence'].includes(path);
+    const isMid = ['talib','wai','mumaris','success'].includes(path);
+    if(isNeg){
       habit.streak = 0;
-      // XP penalty
       if(typeof addXP==='function') addXP(-5);
+    } else if(isTop){
+      habit.doneToday = true;
+      habit.count = (habit.count||0) + 1;
+      if(typeof addXP==='function') addXP(15);
+      if(typeof checkHabit==='function') checkHabit(habit.id);
+    } else if(isMid){
+      habit.doneToday = true;
+      habit.count = (habit.count||0) + 1;
+      if(typeof addXP==='function') addXP(10);
+      if(typeof checkHabit==='function') checkHabit(habit.id);
     }
     saveState();
   }
@@ -19617,8 +20036,11 @@ function skipMissedHabit(){
   const todayKey = now.toISOString().slice(0,10);
   const habit = _missedHabitsQueue[_missedHabitsIndex];
   if(habit){
-    if(!habit.flowMapLog) habit.flowMapLog = {};
-    habit.flowMapLog[todayKey] = { path:'failure', choiceIdx:-1, time: Date.now(), missed:true, skipped:true };
+    if(!state.flowMapLog) state.flowMapLog = {};
+    const fmKey = todayKey + '_' + habit.id;
+    state.flowMapLog[fmKey] = { path:'thaqafi', choiceIdx:-1, time: Date.now(), missed:true, skipped:true };
+    if(!state._fmShownToday) state._fmShownToday = {};
+    state._fmShownToday[habit.id] = true;
     habit.streak = 0;
     saveState();
   }
@@ -19641,11 +20063,10 @@ document.addEventListener('DOMContentLoaded', function(){
   }, 2000);
 });
 
-function confirmAddCoreHabits(){
+async function confirmAddCoreHabits(){
   const city = document.getElementById('notch-prayer-city')?.value;
   if(!city){ showToast('⚠️ اختر مدينتك أولاً'); return; }
-  const times = _getPrayerTimesForCity(city);
-  if(!times){ showToast('⚠️ المدينة غير مدعومة'); return; }
+  if(!_CITY_COORDS[city]){ showToast('⚠️ المدينة غير مدعومة'); return; }
 
   // إذا كانت مخفية، أعد إظهارها أولاً
   const hadHidden = (state.habits||[]).some(h=>h.isCoreHabit && h._coreHidden);
@@ -19655,18 +20076,13 @@ function confirmAddCoreHabits(){
     return;
   }
 
+  showToast('🌐 جاري جلب المواقيت...');
+  const times = await _fetchPrayerTimesFromAPI(city);
+  if(!times){ showToast('❌ تعذّر جلب المواقيت — تحقق من الاتصال'); return; }
+
   // Build preview list of habits to add
-  function minusTenPreview(t){
-    const [h,m] = t.split(':').map(Number);
-    const total = h*60+m-10;
-    const hh = Math.floor(total/60)%24, mm = total%60;
-    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-  }
-  function minusNPreview(t,n){
-    const [h,m] = t.split(':').map(Number);
-    const total = ((h*60+m-n)+1440)%1440;
-    return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
-  }
+  function minusTenPreview(t){ return _addMinsToTime(t, -10); }
+  function minusNPreview(t,n){ return _addMinsToTime(t, -n); }
   const previewList = [
     { name:'الاستيقاظ', icon:'⏰', time: minusNPreview(times.fajr, 70) },
     { name:'أذكار الصباح', icon:'📿', time: times.morning_adhkar },
@@ -19749,328 +20165,232 @@ function setupPrayerHabitsFromNotch(city){
 //  PRAYER TIMES SETUP — إعداد عادات الصلاة
 // ════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════
-//  مواقيت الصلاة — محدّثة من timesprayer.com
-//  كل مدينة تحتوي على مواقيت لكل شهر (م1→م12) بناءً على البيانات الفعلية
-//  الطريقة: قراءة الشهر الحالي واختيار القيم المناسبة
+//  مواقيت الصلاة — AlAdhan API (مواقيت فعلية للمدينة واليوم الحالي)
+//  https://aladhan.com/prayer-times-api
 // ══════════════════════════════════════════════════════════════════
 
-// Helper: تحويل دقائق إلى HH:MM
-function _minsToHHMM(m){ m=((m%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
-
-// Helper: حساب المواقيت الشهرية لمدينة (interpolation بين شهرين)
-function _getPrayerTimesForCity(cityKey){
-  const DB = _PRAYER_DB[cityKey];
-  if(!DB) return null;
-  const m = new Date().getMonth(); // 0=يناير..11=ديسمبر
-  const row = DB[m];
-  return {
-    fajr:            _minsToHHMM(row[0]),
-    dhuhr:           _minsToHHMM(row[1]),
-    asr:             _minsToHHMM(row[2]),
-    maghrib:         _minsToHHMM(row[3]),
-    isha:            _minsToHHMM(row[4]),
-    morning_adhkar:  _minsToHHMM(row[0]+20),  // بعد الفجر بـ20 دقيقة
-    evening_adhkar:  _minsToHHMM(row[2]-30),  // قبل العصر بـ30 دقيقة
-  };
-}
-
-// قاعدة البيانات: [فجر, ظهر, عصر, مغرب, عشاء] بالدقائق لكل شهر (12 صف)
-// المصدر: timesprayer.com مع الهيئة المصرية للمساحة للقاهرة / أم القرى للسعودية
-const _PRAYER_DB = {
-  // ── القاهرة (مصر) — الهيئة المصرية للمساحة ──────────────────────
-  cairo: [
-  //  فجر   ظهر   عصر   مغرب  عشاء   (كل قيمة = دقائق من منتصف الليل)
-    [ 362,  720,  930,  1020, 1089], // يناير  06:02, 12:00, 15:30, 17:00, 18:09
-    [ 352,  714,  925,  1028, 1098], // فبراير 05:52, 11:54, 15:25, 17:08, 18:18
-    [ 336,  703,  915,  1040, 1108], // مارس   05:36, 11:43, 15:15, 17:20, 18:28
-    [ 316,  690,  900,  1051, 1121], // إبريل  05:16, 11:30, 15:00, 17:31, 18:41
-    [ 302,  681,  888,  1062, 1130], // مايو   05:02, 11:21, 14:48, 17:42, 18:50
-    [ 298,  681,  888,  1072, 1140], // يونيو  04:58, 11:21, 14:48, 17:52, 19:00
-    [ 302,  685,  892,  1074, 1140], // يوليو  05:02, 11:25, 14:52, 17:54, 19:00
-    [ 314,  689,  897,  1065, 1133], // أغسطس 05:14, 11:29, 14:57, 17:45, 18:53
-    [ 330,  693,  900,  1050, 1120], // سبتمبر05:30, 11:33, 15:00, 17:30, 18:40
-    [ 348,  697,  905,  1030, 1100], // أكتوبر 05:48, 11:37, 15:05, 17:10, 18:20
-    [ 358,  707,  915,  1018, 1088], // نوفمبر 05:58, 11:47, 15:15, 16:58, 18:08
-    [ 364,  717,  925,  1017, 1085], // ديسمبر 06:04, 11:57, 15:25, 16:57, 18:05
-  ],
-  // ── الرياض (السعودية) — أم القرى ────────────────────────────────
-  riyadh: [
-    [ 355,  712,  915,  1020, 1110], // يناير
-    [ 343,  705,  908,  1030, 1120], // فبراير
-    [ 325,  695,  898,  1044, 1134], // مارس
-    [ 305,  680,  882,  1058, 1148], // إبريل
-    [ 290,  669,  875,  1104, 1194], // مايو  03:50, 11:49, 15:15, 18:24, 19:54
-    [ 284,  670,  874,  1114, 1204], // يونيو
-    [ 289,  673,  877,  1113, 1200], // يوليو
-    [ 303,  677,  882,  1104, 1192], // أغسطس
-    [ 320,  681,  887,  1088, 1178], // سبتمبر
-    [ 337,  686,  889,  1068, 1158], // أكتوبر
-    [ 349,  697,  898,  1052, 1142], // نوفمبر
-    [ 356,  708,  907,  1044, 1134], // ديسمبر
-  ],
-  // ── جدة (السعودية) — أم القرى ───────────────────────────────────
-  jeddah: [
-    [ 357,  713,  914,  1018, 1108], // يناير
-    [ 345,  706,  907,  1028, 1118], // فبراير
-    [ 327,  695,  896,  1042, 1132], // مارس
-    [ 307,  680,  880,  1056, 1146], // إبريل
-    [ 293,  670,  873,  1070, 1160], // مايو
-    [ 287,  671,  873,  1080, 1170], // يونيو
-    [ 291,  674,  876,  1080, 1167], // يوليو
-    [ 305,  678,  880,  1070, 1158], // أغسطس
-    [ 321,  681,  884,  1055, 1145], // سبتمبر
-    [ 338,  685,  887,  1040, 1130], // أكتوبر
-    [ 350,  696,  896,  1028, 1118], // نوفمبر
-    [ 357,  707,  905,  1022, 1112], // ديسمبر
-  ],
-  // ── دبي (الإمارات) ───────────────────────────────────────────────
-  dubai: [
-    [ 358,  720,  919,  1038, 1128], // يناير
-    [ 346,  712,  911,  1048, 1138], // فبراير
-    [ 327,  700,  900,  1059, 1149], // مارس
-    [ 307,  685,  883,  1072, 1162], // إبريل
-    [ 291,  674,  875,  1084, 1174], // مايو
-    [ 284,  674,  874,  1092, 1182], // يونيو
-    [ 287,  677,  877,  1091, 1178], // يوليو
-    [ 300,  680,  882,  1082, 1170], // أغسطس
-    [ 317,  683,  886,  1066, 1156], // سبتمبر
-    [ 334,  686,  887,  1048, 1138], // أكتوبر
-    [ 347,  696,  896,  1036, 1126], // نوفمبر
-    [ 354,  706,  904,  1030, 1120], // ديسمبر
-  ],
-  // ── الكويت ───────────────────────────────────────────────────────
-  kuwait: [
-    [ 350,  711,  912,  1018, 1108], // يناير
-    [ 338,  704,  905,  1029, 1119], // فبراير
-    [ 320,  693,  895,  1044, 1134], // مارس
-    [ 300,  678,  878,  1058, 1148], // إبريل
-    [ 285,  668,  872,  1070, 1160], // مايو
-    [ 279,  669,  871,  1080, 1170], // يونيو
-    [ 283,  672,  874,  1080, 1167], // يوليو
-    [ 296,  676,  878,  1070, 1157], // أغسطس
-    [ 313,  680,  882,  1054, 1143], // سبتمبر
-    [ 330,  684,  885,  1036, 1126], // أكتوبر
-    [ 342,  694,  894,  1022, 1112], // نوفمبر
-    [ 349,  705,  903,  1016, 1106], // ديسمبر
-  ],
-  // ── عمّان (الأردن) ───────────────────────────────────────────────
-  amman: [
-    [ 357,  718,  917,  1022, 1112], // يناير
-    [ 345,  710,  909,  1033, 1123], // فبراير
-    [ 327,  698,  898,  1047, 1137], // مارس
-    [ 306,  682,  881,  1062, 1152], // إبريل
-    [ 291,  671,  874,  1075, 1165], // مايو
-    [ 284,  671,  874,  1086, 1176], // يونيو
-    [ 289,  675,  877,  1086, 1173], // يوليو
-    [ 302,  679,  881,  1076, 1164], // أغسطس
-    [ 319,  682,  884,  1060, 1150], // سبتمبر
-    [ 336,  685,  886,  1042, 1132], // أكتوبر
-    [ 348,  695,  895,  1028, 1118], // نوفمبر
-    [ 355,  706,  904,  1022, 1112], // ديسمبر
-  ],
-  // ── بيروت (لبنان) ────────────────────────────────────────────────
-  beirut: [
-    [ 355,  716,  915,  1020, 1110], // يناير
-    [ 343,  708,  907,  1031, 1121], // فبراير
-    [ 325,  696,  896,  1046, 1136], // مارس
-    [ 304,  680,  879,  1061, 1151], // إبريل
-    [ 289,  669,  872,  1074, 1164], // مايو
-    [ 282,  669,  872,  1085, 1175], // يونيو
-    [ 287,  673,  875,  1085, 1172], // يوليو
-    [ 300,  677,  879,  1075, 1163], // أغسطس
-    [ 317,  680,  882,  1059, 1149], // سبتمبر
-    [ 334,  684,  884,  1041, 1131], // أكتوبر
-    [ 346,  694,  893,  1027, 1117], // نوفمبر
-    [ 353,  705,  902,  1021, 1111], // ديسمبر
-  ],
-  // ── الدار البيضاء (المغرب) ───────────────────────────────────────
-  casablanca: [
-    [ 384,  752,  950,  1037, 1127], // يناير  06:24, 12:32, 15:50, 17:17, 18:47
-    [ 371,  742,  941,  1050, 1140], // فبراير
-    [ 353,  728,  926,  1063, 1153], // مارس
-    [ 331,  711,  908,  1079, 1169], // إبريل
-    [ 315,  699,  899,  1094, 1184], // مايو
-    [ 308,  699,  899,  1107, 1197], // يونيو
-    [ 312,  703,  902,  1108, 1195], // يوليو
-    [ 326,  707,  907,  1097, 1185], // أغسطس
-    [ 344,  711,  910,  1079, 1168], // سبتمبر
-    [ 361,  715,  913,  1059, 1148], // أكتوبر
-    [ 374,  725,  922,  1044, 1134], // نوفمبر
-    [ 381,  737,  932,  1038, 1128], // ديسمبر
-  ],
-  // ── تونس ─────────────────────────────────────────────────────────
-  tunis: [
-    [ 372,  735,  935,  1025, 1115], // يناير
-    [ 360,  727,  927,  1038, 1128], // فبراير
-    [ 342,  714,  913,  1053, 1143], // مارس
-    [ 320,  697,  896,  1070, 1160], // إبريل
-    [ 305,  685,  887,  1085, 1175], // مايو
-    [ 298,  685,  887,  1098, 1188], // يونيو
-    [ 302,  689,  890,  1099, 1186], // يوليو
-    [ 316,  693,  895,  1087, 1175], // أغسطس
-    [ 333,  697,  898,  1069, 1158], // سبتمبر
-    [ 351,  701,  901,  1049, 1138], // أكتوبر
-    [ 363,  712,  911,  1034, 1124], // نوفمبر
-    [ 370,  724,  921,  1027, 1117], // ديسمبر
-  ],
-  // ── بغداد (العراق) ───────────────────────────────────────────────
-  baghdad: [
-    [ 342,  700,  900,  1008, 1098], // يناير
-    [ 330,  692,  892,  1019, 1109], // فبراير
-    [ 312,  681,  881,  1035, 1125], // مارس
-    [ 291,  665,  864,  1051, 1141], // إبريل
-    [ 276,  655,  858,  1065, 1155], // مايو
-    [ 270,  655,  857,  1077, 1167], // يونيو
-    [ 274,  659,  861,  1077, 1164], // يوليو
-    [ 287,  663,  865,  1066, 1154], // أغسطس
-    [ 304,  666,  868,  1048, 1138], // سبتمبر
-    [ 321,  670,  870,  1028, 1118], // أكتوبر
-    [ 333,  680,  880,  1014, 1104], // نوفمبر
-    [ 341,  692,  891,  1008, 1098], // ديسمبر
-  ],
-  // ── الإسكندرية (مصر) — مثل القاهرة مع فارق طفيف ─────────────────
-  alexandria: [
-    [ 360,  718,  928,  1018, 1087],
-    [ 350,  712,  923,  1026, 1096],
-    [ 334,  701,  913,  1038, 1106],
-    [ 314,  688,  898,  1049, 1119],
-    [ 300,  679,  886,  1060, 1128],
-    [ 296,  679,  886,  1070, 1138],
-    [ 300,  683,  890,  1072, 1138],
-    [ 312,  687,  895,  1063, 1131],
-    [ 328,  691,  898,  1048, 1118],
-    [ 346,  695,  903,  1028, 1098],
-    [ 356,  705,  913,  1016, 1086],
-    [ 362,  715,  923,  1015, 1083],
-  ],
+// خريطة مفاتيح المدن → إحداثيات AlAdhan
+const _CITY_COORDS = {
+  cairo:       { city:'Cairo',        country:'EG', method:5  }, // الهيئة المصرية للمساحة
+  alexandria:  { city:'Alexandria',   country:'EG', method:5  },
+  riyadh:      { city:'Riyadh',       country:'SA', method:4  }, // أم القرى
+  jeddah:      { city:'Jeddah',       country:'SA', method:4  },
+  dubai:       { city:'Dubai',        country:'AE', method:8  }, // خليج
+  kuwait:      { city:'Kuwait City',  country:'KW', method:9  },
+  amman:       { city:'Amman',        country:'JO', method:3  }, // MWL
+  beirut:      { city:'Beirut',       country:'LB', method:3  },
+  casablanca:  { city:'Casablanca',   country:'MA', method:21 }, // وزارة الأوقاف المغربية
+  tunis:       { city:'Tunis',        country:'TN', method:3  },
+  baghdad:     { city:'Baghdad',      country:'IQ', method:3  },
 };
 
-function setupPrayerHabits(){
+// Cache لتخزين المواقيت لتجنب طلبات متكررة
+const _prayerCache = {};
+
+// Helper: تحويل وقت "HH:MM" إلى دقائق وإضافة/طرح دقائق وإعادة "HH:MM"
+function _addMinsToTime(timeStr, deltaMins){
+  const [h,m] = timeStr.split(':').map(Number);
+  const total = ((h*60+m+deltaMins)+1440)%1440;
+  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+}
+
+// Helper: جلب مواقيت الصلاة من AlAdhan API
+async function _fetchPrayerTimesFromAPI(cityKey){
+  const cfg = _CITY_COORDS[cityKey];
+  if(!cfg) return null;
+
+  const cacheKey = cityKey + '_' + new Date().toISOString().slice(0,10);
+  if(_prayerCache[cacheKey]) return _prayerCache[cacheKey];
+
+  try {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2,'0');
+    const mm = String(today.getMonth()+1).padStart(2,'0');
+    const yyyy = today.getFullYear();
+    const url = `https://api.aladhan.com/v1/timingsByCity/${dd}-${mm}-${yyyy}?city=${encodeURIComponent(cfg.city)}&country=${cfg.country}&method=${cfg.method}`;
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('AlAdhan API error');
+    const data = await resp.json();
+    if(data.code !== 200) throw new Error('AlAdhan bad response');
+    const t = data.data.timings;
+    // AlAdhan يعطي الوقت بصيغة "HH:MM" — نحذف الثواني لو وُجدت
+    const clean = v => v.replace(/\s*\(.*\)/, '').trim().slice(0,5);
+    const result = {
+      fajr:           clean(t.Fajr),
+      dhuhr:          clean(t.Dhuhr),
+      asr:            clean(t.Asr),
+      maghrib:        clean(t.Maghrib),
+      isha:           clean(t.Isha),
+      morning_adhkar: _addMinsToTime(clean(t.Fajr), 20),   // بعد الفجر بـ20 دقيقة
+      evening_adhkar: _addMinsToTime(clean(t.Asr),  30),   // بعد العصر بـ30 دقيقة
+    };
+    _prayerCache[cacheKey] = result;
+    return result;
+  } catch(e) {
+    console.warn('[Life Hero] AlAdhan API failed:', e);
+    return null;
+  }
+}
+
+// للتوافق مع الكود القديم الذي يستدعي _getPrayerTimesForCity بشكل متزامن
+// نبقي النسخة المتزامنة تعيد القيم من الكاش فقط (تُستخدم بعد أول جلب)
+function _getPrayerTimesForCity(cityKey){
+  const cacheKey = cityKey + '_' + new Date().toISOString().slice(0,10);
+  return _prayerCache[cacheKey] || null;
+}
+
+// الـ Dummy لقاعدة البيانات القديمة — نبقيها فارغة (الـ API يغني عنها)
+const _PRAYER_DB = {};
+// (تم حذف قاعدة البيانات الثابتة — AlAdhan API يُستخدم بدلاً منها)
+
+// ══════════════════════════════════════════════════════════════════
+//  setupPrayerHabits — async يستخدم AlAdhan API + 7 اختيارات للمسارات
+// ══════════════════════════════════════════════════════════════════
+async function setupPrayerHabits(){
   const city = document.getElementById('fm-prayer-city')?.value || document.getElementById('notch-prayer-city')?.value;
   if(!city){ showToast('⚠️ اختر مدينتك أولاً'); return; }
-  const times = _getPrayerTimesForCity(city);
-  if(!times){ showToast('⚠️ المدينة غير مدعومة'); return; }
+  if(!_CITY_COORDS[city]){ showToast('⚠️ المدينة غير مدعومة'); return; }
+
+  showToast('🌐 جاري جلب مواقيت الصلاة...');
+  const times = await _fetchPrayerTimesFromAPI(city);
+  if(!times){ showToast('❌ تعذّر جلب المواقيت — تحقق من الاتصال'); return; }
 
   // حساب وقت الطهارة قبل الصلاة بـ 10 دقائق
-  function minusTen(t){
-    const [h,m] = t.split(':').map(Number);
-    const total = h*60+m-10;
-    const hh = Math.floor(total/60)%24, mm = total%60;
-    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-  }
+  function minusTen(t){ return _addMinsToTime(t, -10); }
+  function minusN(t, n){ return _addMinsToTime(t, -n); }
 
+  // ── 7 اختيارات لكل مسار — الطهارة ──
   const purityChoices = [
-    { text:'توضأت على الفور',        path:'excellence' },
-    { text:'توضأت بعد قليل',          path:'success'    },
-    { text:'توضأت متأخراً',           path:'failure'    },
-    { text:'لم أتوضأ بعد',            path:'failure'    },
-  ];
-  const prayerChoices = [
-    { text:'صليت في أول الوقت',    path:'excellence' },
-    { text:'صليت في الوقت',         path:'success'    },
-    { text:'صليت متأخراً قليلاً',  path:'failure'    },
-    { text:'لم أصلِّ في وقتها',    path:'failure'    },
-  ];
-  const adhkarChoices = [
-    { text:'قرأت الأذكار كاملة',    path:'excellence' },
-    { text:'قرأت بعض الأذكار',      path:'success'    },
-    { text:'قرأت القليل فقط',       path:'failure'    },
-    { text:'لم أقرأ الأذكار',       path:'failure'    },
-  ];
-  const sleepChoices = [
-    { text:'نمت في الموعد تماماً',   path:'excellence' },
-    { text:'نمت بعد قليل من الموعد', path:'success'    },
-    { text:'نمت متأخراً نسبياً',     path:'failure'    },
-    { text:'لم أنم بعد / سهرت',     path:'failure'    },
-  ];
-  const wakeChoices = [
-    { text:'استيقظت في الموعد',      path:'excellence' },
-    { text:'استيقظت بعد قليل',       path:'success'    },
-    { text:'استيقظت متأخراً',        path:'failure'    },
-    { text:'لم أستيقظ بعد',          path:'failure'    },
-  ];
-  const mealChoices = [
-    { text:'أكلت صحياً ومتوازناً',   path:'excellence' },
-    { text:'أكلت بشكل مقبول',        path:'success'    },
-    { text:'أكلت بشكل غير صحي',      path:'failure'    },
-    { text:'تخطيت الوجبة',           path:'failure'    },
-  ];
-  const waterChoices = [
-    { text:'شربت كميتي كاملة (2L+)', path:'excellence' },
-    { text:'شربت كمية جيدة (1.5L)',  path:'success'    },
-    { text:'شربت القليل فقط',        path:'failure'    },
-    { text:'كدت لا أشرب ماء',        path:'failure'    },
+    { text:'توضأت على الفور وأسبغت الوضوء بآداب كاملة',  path:'qudwa'   }, // 👑 القدوة
+    { text:'توضأت فور الأذان مع الخشوع',                  path:'abid'    }, // 🤲 العابد
+    { text:'توضأت وقرأت دعاء الوضوء من الحديث',           path:'talib'   }, // 📚 طالب العلم
+    { text:'توضأت في الوقت المناسب',                       path:'wai'     }, // 🧭 الواعي
+    { text:'توضأت متأخراً قليلاً',                         path:'mumaris' }, // ⚡ الممارس
+    { text:'توضأت لكنني تساءلت عن الحكمة من الطهارة',      path:'bahith'  }, // 🔍 الباحث
+    { text:'لم أتوضأ بعد',                                 path:'thaqafi' }, // 🌱 الثقافي
   ];
 
-  // ترتيب مقصود: طهارة → صلاة (متكررة لكل صلاة)
-  // + أذكار + نوم + استيقاظ + وجبات + ماء
-  // الاستيقاظ دائماً قبل طهارة الفجر بساعة (60 دقيقة)، أي قبل الفجر بـ70 دقيقة
-  function minusN(t, n){
-    const [h,m] = t.split(':').map(Number);
-    const total = ((h*60+m-n) + 1440) % 1440;
-    return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
-  }
-  const wakeupTime = minusN(times.fajr, 70); // قبل الفجر بـ70 دقيقة (= قبل الطهارة بساعة)
+  // ── 7 اختيارات لكل مسار — الصلاة ──
+  const prayerChoices = [
+    { text:'صليت في أول الوقت مع الجماعة بخشوع تام',     path:'qudwa'   },
+    { text:'صليت مع الجماعة وأطلت في الذكر بعدها',        path:'abid'    },
+    { text:'صليت وتدبّرت معاني الآيات أثناء الصلاة',       path:'talib'   },
+    { text:'صليت في الوقت مع الوعي بأهميتها',             path:'wai'     },
+    { text:'صليت متأخراً قليلاً',                          path:'mumaris' },
+    { text:'صليت وتساءلت عن أسرار الصلاة العلمية',        path:'bahith'  },
+    { text:'لم أصلِّ في وقتها',                           path:'thaqafi' },
+  ];
+
+  // ── 7 اختيارات — الأذكار ──
+  const adhkarChoices = [
+    { text:'قرأت الأذكار كاملة بتأمل وخشوع ومعرفة معانيها', path:'qudwa'   },
+    { text:'قرأت الأذكار كاملة مع تركيز قلبي عميق',          path:'abid'    },
+    { text:'قرأت الأذكار مع مراجعة شرحها وفضلها',            path:'talib'   },
+    { text:'قرأت الأذكار كاملة بوعي واهتمام',                path:'wai'     },
+    { text:'قرأت بعض الأذكار فقط',                           path:'mumaris' },
+    { text:'قرأت الأذكار وبحثت عن دليلها العلمي',            path:'bahith'  },
+    { text:'لم أقرأ الأذكار اليوم',                          path:'thaqafi' },
+  ];
+
+  // ── 7 اختيارات — النوم ──
+  const sleepChoices = [
+    { text:'نمت بآداب النوم الكاملة (أذكار + طهارة) في الموعد', path:'qudwa'   },
+    { text:'نمت مع الوضوء وأذكار النوم بتأمل عميق',             path:'abid'    },
+    { text:'نمت بعد مراجعة ما تعلمته اليوم من العلم',           path:'talib'   },
+    { text:'نمت في الموعد مع الاستعداد ليوم أفضل',              path:'wai'     },
+    { text:'نمت متأخراً نسبياً',                                path:'mumaris' },
+    { text:'نمت بعد البحث في موضوع علمي شغل تفكيري',           path:'bahith'  },
+    { text:'لم أنم بعد / سهرت دون هدف',                        path:'thaqafi' },
+  ];
+
+  // ── 7 اختيارات — الاستيقاظ ──
+  const wakeChoices = [
+    { text:'استيقظت للتهجد قبل الفجر وأدّيت ركعات',      path:'qudwa'   },
+    { text:'استيقظت وأحييت آخر الليل بذكر وتضرع',        path:'abid'    },
+    { text:'استيقظت وراجعت حفظي أو علمي قبل الفجر',      path:'talib'   },
+    { text:'استيقظت في الموعد للفجر بدون تأخير',          path:'wai'     },
+    { text:'استيقظت بعد قليل من أذان الفجر',              path:'mumaris' },
+    { text:'استيقظت متأخراً وكنت أفكر في أسرار الكون',   path:'bahith'  },
+    { text:'فاتني الفجر ونمت بعد وقته',                  path:'thaqafi' },
+  ];
+
+  // ── 7 اختيارات — الوجبات ──
+  const mealChoices = [
+    { text:'أكلت صحياً ومتوازناً باتباع السنة النبوية',         path:'qudwa'   },
+    { text:'أكلت بتأمل وشكر وذكر الله على كل نعمة',             path:'abid'    },
+    { text:'طبّقت ما تعلمته من التغذية السنوية والطبية',         path:'talib'   },
+    { text:'أكلت صحياً مع وعي بأثر الطعام على الجسم والروح',   path:'wai'     },
+    { text:'أكلت بشكل مقبول ومتوسط',                           path:'mumaris' },
+    { text:'جرّبت طعاماً جديداً وبحثت في فوائده العلمية',       path:'bahith'  },
+    { text:'أكلت بشكل غير صحي أو تخطيت وجبة',                 path:'thaqafi' },
+  ];
+
+  // ── 7 اختيارات — الماء ──
+  const waterChoices = [
+    { text:'شربت 2L+ مع الالتزام بآداب الشرب الإسلامية',   path:'qudwa'   },
+    { text:'شربت كميتي مع شكر الله على نعمة الماء',         path:'abid'    },
+    { text:'شربت وفق التوصيات العلمية الصحية',              path:'talib'   },
+    { text:'شربت كمية جيدة (1.5L+) باهتمام',               path:'wai'     },
+    { text:'شربت القليل فقط (أقل من 1L)',                   path:'mumaris' },
+    { text:'اهتممت بجودة الماء وبحثت في فوائده العلمية',    path:'bahith'  },
+    { text:'كدت لا أشرب ماء اليوم',                        path:'thaqafi' },
+  ];
+
+  // ── 7 اختيارات — الرياضة العقلية ──
+  const mentalChoices = [
+    { text:'مارست بتركيز تام وأنجزت هدفاً محدداً لرضا الله', path:'qudwa'   },
+    { text:'تعبّدت بالتفكر في خلق الله أثناء التمرين العقلي', path:'abid'    },
+    { text:'درست أو قرأت محتوى علمياً مفيداً بعمق',           path:'talib'   },
+    { text:'مارست بوعي وربطت المعرفة بحياتي اليومية',         path:'wai'     },
+    { text:'مارست القليل فقط بتركيز متقطع',                   path:'mumaris' },
+    { text:'استكشفت سؤالاً علمياً يشغل تفكيري',               path:'bahith'  },
+    { text:'لم أمارس أي رياضة عقلية اليوم',                   path:'thaqafi' },
+  ];
+
+  // ── 7 اختيارات — الرياضة البدنية ──
+  const physicalChoices = [
+    { text:'تمرين كامل ومكثف (+30 دقيقة) بنية الاقتدار على العبادة', path:'qudwa'   },
+    { text:'تمرنت بنية تقوية الجسد لطاعة الله',                       path:'abid'    },
+    { text:'طبّقت برنامجاً رياضياً مبنياً على أساس علمي',              path:'talib'   },
+    { text:'تمرين جيد (20-30 دقيقة) مع وعي بالأهداف الصحية',         path:'wai'     },
+    { text:'حركة خفيفة فقط (مشي أو تمارين بسيطة)',                   path:'mumaris' },
+    { text:'جرّبت تمريناً جديداً وبحثت عن فوائده العلمية',             path:'bahith'  },
+    { text:'لم أتحرك رياضياً اليوم',                                  path:'thaqafi' },
+  ];
+
+  const wakeupTime = minusN(times.fajr, 70);
   const allHabits = [
-    // ⭐ الاستيقاظ دائماً أول عادة — قبل طهارة الفجر بساعة
-    { name:'الاستيقاظ', icon:'⏰', time: wakeupTime, q:'هل استيقظت في الموعد؟', choices: wakeChoices, color:'#f59e0b', isWakeup: true },
-    // أذكار الصباح
-    { name:'أذكار الصباح', icon:'📿', time: times.morning_adhkar, q:'هل قرأت أذكار الصباح؟', choices: adhkarChoices, color:'#10b981' },
-    // الفجر طهارة → صلاة
-    { name:'طهارة الفجر',  icon:'💧', time: minusTen(times.fajr),   q:'هل تطهرت للفجر؟',         choices: purityChoices, color:'#38bdf8' },
-    { name:'صلاة الفجر',   icon:'🌅', time: times.fajr,              q:'هل صليت الفجر في وقته؟',  choices: prayerChoices, color:'#10b981' },
-    // وجبة الإفطار
-    { name:'وجبة الإفطار', icon:'🍳', time:'07:00', q:'كيف كانت وجبة إفطارك؟', choices: mealChoices, color:'#f97316' },
-    // شرب الماء صباحاً
-    { name:'ماء الصباح',   icon:'💧', time:'08:00', q:'هل شربت ماء كافياً في الصباح؟', choices: waterChoices, color:'#38bdf8' },
-    // الرياضة العقلية
-    { name:'🧠 الرياضة العقلية', icon:'🧠', time:'09:00', q:'هل مارست الرياضة العقلية اليوم؟', choices: [
-      { text:'مارست بتركيز تام وأنجزت جيداً', path:'excellence' },
-      { text:'مارست ولكن بتركيز متقطع',        path:'success'    },
-      { text:'مارست القليل فقط',               path:'failure'    },
-      { text:'لم أمارس رياضة عقلية',           path:'failure'    },
-    ], color:'#8b5cf6' },
-    // الظهر طهارة → صلاة
-    { name:'طهارة الظهر',  icon:'💧', time: minusTen(times.dhuhr),   q:'هل تطهرت للظهر؟',         choices: purityChoices, color:'#38bdf8' },
-    { name:'صلاة الظهر',   icon:'☀️',  time: times.dhuhr,             q:'هل صليت الظهر في وقته؟',  choices: prayerChoices, color:'#10b981' },
-    // وجبة الغداء
-    { name:'وجبة الغداء',  icon:'🍽️', time:'13:30', q:'كيف كانت وجبة غدائك؟', choices: mealChoices, color:'#f97316' },
-    // الرياضة البدنية
-    { name:'🏃 الرياضة البدنية', icon:'🏃', time:'14:30', q:'هل مارست الرياضة البدنية اليوم؟', choices: [
-      { text:'تمرين كامل ومكثف (30+ دقيقة)',   path:'excellence' },
-      { text:'تمرين خفيف (15-30 دقيقة)',        path:'success'    },
-      { text:'حركة قليلة فقط (مشي)',            path:'failure'    },
-      { text:'لم أتحرك رياضياً اليوم',          path:'failure'    },
-    ], color:'#f97316' },
-    // العصر طهارة → صلاة
-    { name:'طهارة العصر',  icon:'💧', time: minusTen(times.asr),     q:'هل تطهرت للعصر؟',          choices: purityChoices, color:'#38bdf8' },
-    { name:'صلاة العصر',   icon:'🌤️', time: times.asr,               q:'هل صليت العصر في وقته؟',   choices: prayerChoices, color:'#10b981' },
-    // أذكار المساء
-    { name:'أذكار المساء', icon:'📿', time: times.evening_adhkar, q:'هل قرأت أذكار المساء؟', choices: adhkarChoices, color:'#10b981' },
-    // المغرب طهارة → صلاة
-    { name:'طهارة المغرب', icon:'💧', time: minusTen(times.maghrib), q:'هل تطهرت للمغرب؟',         choices: purityChoices, color:'#38bdf8' },
-    { name:'صلاة المغرب',  icon:'🌆', time: times.maghrib,           q:'هل صليت المغرب في وقته؟', choices: prayerChoices, color:'#10b981' },
-    // وجبة العشاء
-    { name:'وجبة العشاء',  icon:'🌙', time:'19:00', q:'كيف كانت وجبة عشائك؟', choices: mealChoices, color:'#f97316' },
-    // ماء المساء
-    { name:'ماء المساء',   icon:'💧', time:'20:00', q:'هل أتممت شرب الماء اليوم؟', choices: waterChoices, color:'#38bdf8' },
-    // العشاء طهارة → صلاة
-    { name:'طهارة العشاء', icon:'💧', time: minusTen(times.isha),    q:'هل تطهرت للعشاء؟',         choices: purityChoices, color:'#38bdf8' },
-    { name:'صلاة العشاء',  icon:'🌙', time: times.isha,              q:'هل صليت العشاء في وقته؟',  choices: prayerChoices, color:'#10b981' },
-    // نوم
-    { name:'وقت النوم',    icon:'😴', time:'22:00', q:'هل نمت في الموعد؟', choices: sleepChoices, color:'#8b5cf6' },
+    { name:'الاستيقاظ',          icon:'⏰', time: wakeupTime,           q:'هل استيقظت في الموعد؟',             choices: wakeChoices,     color:'#f59e0b', isWakeup: true },
+    { name:'أذكار الصباح',       icon:'📿', time: times.morning_adhkar, q:'هل قرأت أذكار الصباح؟',             choices: adhkarChoices,   color:'#10b981' },
+    { name:'طهارة الفجر',        icon:'💧', time: minusTen(times.fajr), q:'هل تطهرت للفجر؟',                   choices: purityChoices,   color:'#38bdf8' },
+    { name:'صلاة الفجر',         icon:'🌅', time: times.fajr,           q:'هل صليت الفجر في وقته؟',            choices: prayerChoices,   color:'#10b981' },
+    { name:'وجبة الإفطار',       icon:'🍳', time:'07:00',               q:'كيف كانت وجبة إفطارك؟',             choices: mealChoices,     color:'#f97316' },
+    { name:'ماء الصباح',         icon:'💧', time:'08:00',               q:'هل شربت ماء كافياً في الصباح؟',     choices: waterChoices,    color:'#38bdf8' },
+    { name:'🧠 الرياضة العقلية', icon:'🧠', time:'09:00',               q:'هل مارست الرياضة العقلية اليوم؟',   choices: mentalChoices,   color:'#8b5cf6' },
+    { name:'طهارة الظهر',        icon:'💧', time: minusTen(times.dhuhr),q:'هل تطهرت للظهر؟',                   choices: purityChoices,   color:'#38bdf8' },
+    { name:'صلاة الظهر',         icon:'☀️',  time: times.dhuhr,         q:'هل صليت الظهر في وقته؟',            choices: prayerChoices,   color:'#10b981' },
+    { name:'وجبة الغداء',        icon:'🍽️', time:'13:30',               q:'كيف كانت وجبة غدائك؟',              choices: mealChoices,     color:'#f97316' },
+    { name:'🏃 الرياضة البدنية', icon:'🏃', time:'14:30',               q:'هل مارست الرياضة البدنية اليوم؟',   choices: physicalChoices, color:'#f97316' },
+    { name:'طهارة العصر',        icon:'💧', time: minusTen(times.asr),  q:'هل تطهرت للعصر؟',                   choices: purityChoices,   color:'#38bdf8' },
+    { name:'صلاة العصر',         icon:'🌤️', time: times.asr,           q:'هل صليت العصر في وقته؟',            choices: prayerChoices,   color:'#10b981' },
+    { name:'أذكار المساء',       icon:'📿', time: times.evening_adhkar, q:'هل قرأت أذكار المساء؟',             choices: adhkarChoices,   color:'#10b981' },
+    { name:'طهارة المغرب',       icon:'💧', time: minusTen(times.maghrib),q:'هل تطهرت للمغرب؟',               choices: purityChoices,   color:'#38bdf8' },
+    { name:'صلاة المغرب',        icon:'🌆', time: times.maghrib,        q:'هل صليت المغرب في وقته؟',           choices: prayerChoices,   color:'#10b981' },
+    { name:'وجبة العشاء',        icon:'🌙', time:'19:00',               q:'كيف كانت وجبة عشائك؟',              choices: mealChoices,     color:'#f97316' },
+    { name:'ماء المساء',         icon:'💧', time:'20:00',               q:'هل أتممت شرب الماء اليوم؟',         choices: waterChoices,    color:'#38bdf8' },
+    { name:'طهارة العشاء',       icon:'💧', time: minusTen(times.isha), q:'هل تطهرت للعشاء؟',                  choices: purityChoices,   color:'#38bdf8' },
+    { name:'صلاة العشاء',        icon:'🌙', time: times.isha,           q:'هل صليت العشاء في وقته؟',           choices: prayerChoices,   color:'#10b981' },
+    { name:'وقت النوم',          icon:'😴', time:'22:00',               q:'هل نمت في الموعد؟',                 choices: sleepChoices,    color:'#8b5cf6' },
   ];
 
   if(!state.habits) state.habits = [];
   let added = 0;
-  // نضيف بالعكس عشان unshift يحافظ على الترتيب
   [...allHabits].reverse().forEach(p => {
-    // لو العادة موجودة ونريد تحديث الوقت (عند تغيير المدينة)
     const existing = state.habits.find(h=>h.name===p.name && h.isCoreHabit);
     if(existing){
-      // تحديث الوقت إذا تغيّرت المدينة
       existing.coreTime = p.time;
       existing.calStartTime = p.time;
+      existing.coreChoices = p.choices; // تحديث الاختيارات لـ 7 مسارات
       return;
     }
     state.habits.unshift({
@@ -20093,7 +20413,6 @@ function setupPrayerHabits(){
     added++;
   });
 
-  // ضمان أن الاستيقاظ دائماً في الأول
   const wakeIdx = state.habits.findIndex(h => h.isCoreHabit && h.isWakeupHabit);
   if(wakeIdx > 0){
     const [wakeHabit] = state.habits.splice(wakeIdx, 1);
@@ -20101,7 +20420,7 @@ function setupPrayerHabits(){
   }
 
   saveState(); updateUI();
-  showToast(`🕌 تم إضافة ${added} عادة (صلاة + طهارة + نوم + أكل + ماء + رياضة)!`);
+  showToast(`🕌 تم إضافة ${added} عادة بمواقيت دقيقة من AlAdhan API!`);
   const c = document.getElementById('tab-content');
   if(c && state.activeTab==='flowmap') renderFlowMapTab(c);
 }
@@ -20110,6 +20429,9 @@ function setupPrayerHabits(){
 <!-- ══ FLOW MAP POPUP OVERLAY ══ -->
 <div id="fm-popup-overlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.93);backdrop-filter:blur(18px);font-family:'Cairo',sans-serif;direction:rtl;align-items:center;justify-content:center;">
   <div class="fm-inner" style="background:linear-gradient(135deg,#05070a,#0b0e14);border:1px solid rgba(255,255,255,0.1);border-radius:2rem;padding:28px 24px;max-width:420px;width:calc(100% - 32px);max-height:90vh;overflow-y:auto;box-shadow:0 0 80px rgba(168,85,247,0.25),0 0 0 1px rgba(168,85,247,0.12);">
+    <div style="margin-bottom:14px;padding:8px 12px;border-radius:10px;border:1px solid rgba(250,204,21,0.4);background:rgba(250,204,21,0.07);text-align:center;animation:intentionPulse 3s ease-in-out infinite;">
+      <div style="font-size:9px;font-weight:900;color:#fbbf24;">✨ طلب رضوان الله والوصول إليه ✨</div>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <span id="fm-habit-icon" style="font-size:28px;"></span>
       <div style="flex:1;">
